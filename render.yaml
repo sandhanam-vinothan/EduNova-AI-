@@ -1,10 +1,9 @@
 services:
   - type: web
     name: edunova-ai
-    runtime: python
-    rootDir: backend
-    buildCommand: pip install -r requirements.txt && cd ../frontend && npm install && npm run build
-    startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/health
     envVars:
       - key: DATABASE_URL
         sync: false
@@ -14,9 +13,11 @@ services:
         sync: false
       - key: GEMINI_MODEL
         value: gemini-2.5-flash
+      - key: AI_PROVIDER
+        value: gemini
       - key: OLLAMA_BASE_URL
         sync: false
       - key: OLLAMA_MODEL
         value: qwen2.5:7b
-      - key: AI_PROVIDER
-        value: auto
+      - key: ENABLE_TEXTBOOK_UPLOAD
+        value: 'false'
