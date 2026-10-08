@@ -1,0 +1,17 @@
+.env
+node_modules/
+dist/
+__pycache__/
+*.db
+backend/data/*
+!backend/data/textbook.pdf
+.venv/
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+node_modules/
+dist/
+__pycache__/
+*.pyc
