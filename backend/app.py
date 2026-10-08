@@ -135,18 +135,94 @@ def chapters(s:Session=Depends(db)):
 @app.get('/api/chat/history')
 def history(u:User=Depends(current),s:Session=Depends(db)):
  return [{'id':x.id,'role':x.role,'content':x.content,'created':x.created.isoformat()} for x in s.scalars(select(Chat).where(Chat.user_id==u.id).order_by(Chat.id.desc()).limit(100))][::-1]
-async def generate(provider,messages):
- if provider=='gemini':
-  key=os.getenv('GEMINI_API_KEY');model=os.getenv('GEMINI_MODEL','gemini-2.5-flash')
-  if not key:raise RuntimeError('Gemini API key not configured')
-  contents=[{'role':'model' if m['role']=='assistant' else 'user','parts':[{'text':m['content']}]} for m in messages]
-  async with httpx.AsyncClient(timeout=100) as c:
-   r=await c.post(f'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent',headers={'x-goog-api-key':key},json={'contents':contents});r.raise_for_status();return ''.join(p.get('text','') for p in r.json()['candidates'][0]['content']['parts'])
- if provider=='ollama':
-  url=os.getenv('OLLAMA_BASE_URL','http://localhost:11434').rstrip('/')
-  async with httpx.AsyncClient(timeout=100) as c:
-   r=await c.post(url+'/api/chat',json={'model':os.getenv('OLLAMA_MODEL','qwen2.5:7b'),'messages':messages,'stream':False});r.raise_for_status();return r.json()['message']['content']
- raise RuntimeError('Unknown provider')
+async def generate(provider, messages):
+    if provider == 'gemini':
+        key = os.getenv('GEMINI_API_KEY', '').strip()
+        model = os.getenv('GEMINI_MODEL', 'gemini-2.5-flash').strip()
+
+        if not key:
+            raise RuntimeError('Gemini API key not configured')
+
+        system_text = '\n'.join(
+            m['content'] for m in messages
+            if m['role'] == 'system'
+        )
+
+        contents = [
+            {
+                'role': 'model' if m['role'] == 'assistant' else 'user',
+                'parts': [{'text': m['content']}]
+            }
+            for m in messages
+            if m['role'] in ('user', 'assistant')
+        ]
+
+        payload = {
+            'contents': contents,
+            'systemInstruction': {
+                'parts': [{'text': system_text}]
+            }
+        }
+
+        url = (
+            f'https://generativelanguage.googleapis.com/'
+            f'v1beta/models/{model}:generateContent'
+        )
+
+        async with httpx.AsyncClient(timeout=100) as client:
+            response = await client.post(
+                url,
+                headers={'x-goog-api-key': key},
+                json=payload
+            )
+
+            if response.status_code >= 400:
+                try:
+                    error = response.json().get('error', {})
+                    message = error.get('message', 'Unknown API error')
+                except ValueError:
+                    message = 'Unable to read API error'
+
+                # Avoid exposing credentials or internal URLs
+                raise RuntimeError(
+                    f'Gemini HTTP {response.status_code}: '
+                    f'{message[:250]}'
+                )
+
+            data = response.json()
+            candidates = data.get('candidates', [])
+
+            if not candidates:
+                raise RuntimeError('Gemini returned no response candidates')
+
+            parts = candidates[0].get('content', {}).get('parts', [])
+            answer = ''.join(p.get('text', '') for p in parts)
+
+            if not answer:
+                raise RuntimeError('Gemini returned an empty answer')
+
+            return answer
+
+    if provider == 'ollama':
+        url = os.getenv(
+            'OLLAMA_BASE_URL',
+            'http://localhost:11434'
+        ).rstrip('/')
+
+        async with httpx.AsyncClient(timeout=100) as client:
+            response = await client.post(
+                url + '/api/chat',
+                json={
+                    'model': os.getenv('OLLAMA_MODEL', 'qwen2.5:7b'),
+                    'messages': messages,
+                    'stream': False
+                }
+            )
+
+            response.raise_for_status()
+            return response.json()['message']['content']
+
+    raise RuntimeError('Unknown provider')
 @app.post('/api/chat')
 async def chat(v:Question,u:User=Depends(current),s:Session=Depends(db)):
  if not v.message.strip():raise HTTPException(400,'Question required')
@@ -166,7 +242,10 @@ async def chat(v:Question,u:User=Depends(current),s:Session=Depends(db)):
    answer=await generate(provider,messages)
    for role,content in [('user',v.message),('assistant',answer)]:s.add(Chat(user_id=u.id,role=role,content=content))
    s.commit();return {'answer':answer,'provider':provider,'references':[{'pdf_page':p.number,'printed_page':p.printed} for p in ranked[:3]] if pages else []}
-  except Exception as e:errors.append(f'{provider}: {type(e).__name__}')
+  except Exception as e:
+    import logging
+    logging.exception("AI provider %s failed", provider)
+    errors.append(f'{provider}: {type(e).__name__}')
  raise HTTPException(503,'AI unavailable: '+', '.join(errors)+'. Check provider settings and endpoint reachability.')
 @app.get('/api/practice')
 def practice(s:Session=Depends(db)):
