@@ -15,3 +15,12 @@ node_modules/
 dist/
 __pycache__/
 *.pyc
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+node_modules/
+dist/
+__pycache__/
+*.pyc
