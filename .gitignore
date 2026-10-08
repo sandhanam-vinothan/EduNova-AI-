@@ -1,0 +1,8 @@
+.env
+node_modules/
+dist/
+__pycache__/
+*.db
+backend/data/*
+!backend/data/textbook.pdf
+.venv/
