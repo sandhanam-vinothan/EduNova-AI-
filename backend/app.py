@@ -41,9 +41,9 @@ def current(credentials:HTTPAuthorizationCredentials=Depends(auth),s:Session=Dep
  except Exception:raise HTTPException(401,'Invalid or expired session')
 class Credentials(BaseModel):email:str;password:str;name:str='Student'
 class Item(BaseModel):kind:str;payload:dict
-class Question(BaseModel):message:str;provider:str='auto';mode:str='simple';history:list[dict]=[];page:int|None=None
+class Question(BaseModel):message:str;provider:str='ollama';mode:str='simple';history:list[dict]=[];page:int|None=None
 @app.get('/api/health')
-def health():return {'status':'ok','pdf':PDF.exists(),'provider':os.getenv('AI_PROVIDER','auto')}
+def health():return {'status':'ok','pdf':PDF.exists(),'provider':'ollama-cloud'}
 @app.post('/api/auth/signup')
 def signup(v:Credentials,s:Session=Depends(db)):
  if len(v.password)<8 or '@' not in v.email:raise HTTPException(400,'Valid email and password of 8+ characters required')
@@ -135,126 +135,37 @@ def chapters(s:Session=Depends(db)):
 @app.get('/api/chat/history')
 def history(u:User=Depends(current),s:Session=Depends(db)):
  return [{'id':x.id,'role':x.role,'content':x.content,'created':x.created.isoformat()} for x in s.scalars(select(Chat).where(Chat.user_id==u.id).order_by(Chat.id.desc()).limit(100))][::-1]
-async def generate(provider, messages):
-    if provider == 'openai':
-        key = os.getenv('OPENAI_API_KEY', '').strip()
-        model = os.getenv('OPENAI_MODEL', 'gpt-4.1-mini').strip()
-        if not key:
-            raise RuntimeError('OpenAI API key not configured')
-        system_text = '\n'.join(m['content'] for m in messages if m['role'] == 'system')
-        conversation = [{'role': m['role'], 'content': m['content']} for m in messages if m['role'] in ('user', 'assistant')]
-        async with httpx.AsyncClient(timeout=100) as client:
-            response = await client.post(
-                'https://api.openai.com/v1/responses',
-                headers={'Authorization': f'Bearer {key}'},
-                json={'model': model, 'instructions': system_text,
-                      'input': conversation, 'max_output_tokens': 1500},
-            )
-            if response.status_code >= 400:
-                try:
-                    api_error = response.json().get('error', {})
-                    error_type = api_error.get('type', 'api_error')
-                    error_code = api_error.get('code') or 'unknown'
-                except (ValueError, AttributeError):
-                    error_type, error_code = 'api_error', 'unknown'
-                raise RuntimeError(f'OpenAI HTTP {response.status_code}: {error_type} ({error_code})')
-            data = response.json()
-            answer = ''.join(
-                part.get('text', '')
-                for item in data.get('output', []) if item.get('type') == 'message'
-                for part in item.get('content', []) if part.get('type') == 'output_text'
-            ).strip()
-            if not answer:
-                raise RuntimeError('OpenAI returned no text response')
-            return answer
+async def generate(messages):
+    """Use Ollama Cloud exclusively; credentials never leave the backend."""
+    key = os.getenv('OLLAMA_API_KEY', '').strip()
+    model = os.getenv('OLLAMA_MODEL', 'gemma4:31b').strip()
+    if not key:
+        raise RuntimeError('OLLAMA_API_KEY is missing in Render Environment')
+    if not model:
+        raise RuntimeError('OLLAMA_MODEL is missing in Render Environment')
 
-    if provider == 'gemini':
-        key = os.getenv('GEMINI_API_KEY', '').strip()
-        model = os.getenv('GEMINI_MODEL', 'gemini-2.5-flash').strip()
-
-        if not key:
-            raise RuntimeError('Gemini API key not configured')
-
-        system_text = '\n'.join(
-            m['content'] for m in messages
-            if m['role'] == 'system'
+    async with httpx.AsyncClient(timeout=120) as client:
+        response = await client.post(
+            'https://ollama.com/api/chat',
+            headers={
+                'Authorization': f'Bearer {key}',
+                'Content-Type': 'application/json',
+            },
+            json={
+                'model': model,
+                'messages': messages,
+                'stream': False,
+            },
         )
+        if response.status_code >= 400:
+            # Do not expose response bodies or credentials to website visitors.
+            raise RuntimeError(f'Ollama Cloud HTTP {response.status_code}')
+        data = response.json()
+        answer = data.get('message', {}).get('content', '').strip()
+        if not answer:
+            raise RuntimeError('Ollama Cloud returned an empty response')
+        return answer
 
-        contents = [
-            {
-                'role': 'model' if m['role'] == 'assistant' else 'user',
-                'parts': [{'text': m['content']}]
-            }
-            for m in messages
-            if m['role'] in ('user', 'assistant')
-        ]
-
-        payload = {
-            'contents': contents,
-            'systemInstruction': {
-                'parts': [{'text': system_text}]
-            }
-        }
-
-        url = (
-            f'https://generativelanguage.googleapis.com/'
-            f'v1beta/models/{model}:generateContent'
-        )
-
-        async with httpx.AsyncClient(timeout=100) as client:
-            response = await client.post(
-                url,
-                headers={'x-goog-api-key': key},
-                json=payload
-            )
-
-            if response.status_code >= 400:
-                try:
-                    error = response.json().get('error', {})
-                    message = error.get('message', 'Unknown API error')
-                except ValueError:
-                    message = 'Unable to read API error'
-
-                # Avoid exposing credentials or internal URLs
-                raise RuntimeError(
-                    f'Gemini HTTP {response.status_code}: '
-                    f'{message[:250]}'
-                )
-
-            data = response.json()
-            candidates = data.get('candidates', [])
-
-            if not candidates:
-                raise RuntimeError('Gemini returned no response candidates')
-
-            parts = candidates[0].get('content', {}).get('parts', [])
-            answer = ''.join(p.get('text', '') for p in parts)
-
-            if not answer:
-                raise RuntimeError('Gemini returned an empty answer')
-
-            return answer
-
-    if provider == 'ollama':
-        url = os.getenv(
-            'OLLAMA_BASE_URL',
-            'http://localhost:11434'
-        ).rstrip('/')
-
-        async with httpx.AsyncClient(timeout=100) as client:
-            response = await client.post(
-                url + '/api/chat',
-                json={
-                    'model': os.getenv('OLLAMA_MODEL', 'qwen2.5:7b'),
-                    'messages': messages,
-                    'stream': False
-                }
-            )
-
-            response.raise_for_status()
-            return response.json()['message']['content']
-
-    raise RuntimeError('Unknown provider')
 @app.post('/api/chat')
 async def chat(v:Question,u:User=Depends(current),s:Session=Depends(db)):
  if not v.message.strip():raise HTTPException(400,'Question required')
@@ -266,20 +177,21 @@ async def chat(v:Question,u:User=Depends(current),s:Session=Depends(db)):
  modes={'simple':'Explain in simple language','detailed':'Explain step by step','textbook':'Give a textbook-grounded answer','2marks':'Answer concisely for 2 marks','3marks':'Answer for 3 marks','5marks':'Answer for 5 marks'}
  system='You are EduNova AI, a Tamil Nadu Class 12 Computer Science tutor. '+modes.get(v.mode,modes['simple'])+'. Cite PDF and printed page only if present in supplied context. Do not invent textbook quotations or references. If not grounded, explicitly say so.\nTEXTBOOK CONTEXT:\n'+(context or 'No indexed textbook is available.')
  messages=[{'role':'system','content':system}]+[{'role':m.get('role','user'),'content':str(m.get('content',''))[:4000]} for m in v.history[-8:] if m.get('role') in ('user','assistant')]+[{'role':'user','content':v.message}]
- preferred=v.provider if v.provider in ('openai','gemini','ollama') else os.getenv('AI_PROVIDER','openai')
- order=[preferred] if preferred in ('openai','gemini','ollama') else ['openai']
- if v.provider=='auto' or preferred=='auto':order=['openai']
- errors=[]
- for provider in order:
-  try:
-   answer=await generate(provider,messages)
-   for role,content in [('user',v.message),('assistant',answer)]:s.add(Chat(user_id=u.id,role=role,content=content))
-   s.commit();return {'answer':answer,'provider':provider,'references':[{'pdf_page':p.number,'printed_page':p.printed} for p in ranked[:3]] if pages else []}
-  except Exception as e:
-    import logging
-    logging.exception("AI provider %s failed", provider)
-    errors.append(f'{provider}: {type(e).__name__}')
- raise HTTPException(503,'AI unavailable: '+', '.join(errors)+'. Check provider settings and endpoint reachability.')
+ try:
+  answer=await generate(messages)
+  for role,content in [('user',v.message),('assistant',answer)]:
+   s.add(Chat(user_id=u.id,role=role,content=content))
+  s.commit()
+  return {'answer':answer,'provider':'ollama','references':[{'pdf_page':p.number,'printed_page':p.printed} for p in ranked[:3]] if pages else []}
+ except Exception as e:
+  import logging
+  logging.exception('Ollama Cloud chat failed')
+  # Expose only safe diagnostic categories, never provider response or API key.
+  if isinstance(e, RuntimeError) and str(e).startswith('Ollama Cloud HTTP '):
+   raise HTTPException(503, str(e) + '. Check Ollama key, model and usage limits.')
+  if isinstance(e, RuntimeError) and str(e).startswith('OLLAMA_'):
+   raise HTTPException(503, str(e))
+  raise HTTPException(503, 'Ollama Cloud is unavailable. Check Render logs.')
 @app.get('/api/practice')
 def practice(s:Session=Depends(db)):
  pages=list(s.scalars(select(Page).limit(30)));out=[]
