@@ -8,15 +8,43 @@ const names=['Dashboard','AI Chatbot','Textbook Reader','Find Book Line','Quick 
 
 
 function plainSpeech(value){return String(value||'').replace(/\[([^\]]+)\]\([^)]+\)/g,'$1').replace(/[`*_#~]/g,'').replace(/<[^>]+>/g,'').replace(/\s+/g,' ').trim()}
-function SpeechHighlight({text,offset,base=0}){
-  const content=String(text||'');
-  const words=[...content.matchAll(/\S+/g)];
-  return <span className="speech-inline" aria-live="off">{words.map((m,i)=>{
-    const next=words[i+1]?.index??content.length;
-    const active=offset>=0&&offset>=base+m.index&&offset<base+next;
-    const before=content.slice(i?words[i-1].index+words[i-1][0].length:0,m.index);
-    return <React.Fragment key={i}>{before}<span className={active?'spoken-word':undefined}>{m[0]}</span>{i===words.length-1?content.slice(m.index+m[0].length):''}</React.Fragment>;
-  })}</span>;
+// Browser CSS Highlights paint the spoken word over the EXISTING React Markdown.
+// No duplicate text, no replaced paragraphs, and no changes to quiz answer controls.
+function clearVoiceHighlight(){
+  if(typeof CSS!=='undefined' && CSS.highlights)CSS.highlights.delete('edunova-voice');
+}
+function paintVoiceHighlight(id,offset){
+  clearVoiceHighlight();
+  if(offset<0 || typeof CSS==='undefined' || !CSS.highlights || typeof Highlight==='undefined')return;
+  const selector='[data-voice-id="'+CSS.escape(String(id))+'"]';
+  const targets=[...document.querySelectorAll(selector)];
+  if(!targets.length)return;
+  const source=targets.map(el=>el.textContent||'').join(' ');
+  // Speech input and rendered text have the same words but Markdown formatting
+  // and punctuation can differ. Match by ordinal word rather than raw DOM offset.
+  const spoken=document.querySelector('[data-voice-source="'+CSS.escape(String(id))+'"]');
+  const utteranceText=spoken?.getAttribute('data-voice-text')||source;
+  const tokens=[...utteranceText.matchAll(/\S+/g)];
+  let wordIndex=tokens.findIndex((m,i)=>offset>=m.index && offset<(tokens[i+1]?.index??utteranceText.length));
+  if(wordIndex<0)return;
+  const visibleTokens=[...source.matchAll(/\S+/g)];
+  if(wordIndex>=visibleTokens.length)return;
+  const word=visibleTokens[wordIndex];
+  let remainingStart=word.index,remainingEnd=word.index+word[0].length;
+  // Walk only the visible text of each marked source, preserving every React node.
+  const ranges=[];
+  let cursor=0;
+  for(const el of targets){
+    const w=document.createTreeWalker(el,NodeFilter.SHOW_TEXT);
+    while(w.nextNode()){
+      const node=w.currentNode,len=node.textContent.length;
+      const a=Math.max(remainingStart,cursor),b=Math.min(remainingEnd,cursor+len);
+      if(a<b){const r=document.createRange();r.setStart(node,a-cursor);r.setEnd(node,b-cursor);ranges.push(r)}
+      cursor+=len;
+    }
+    cursor+=1; // separator between marked text regions
+  }
+  if(ranges.length)CSS.highlights.set('edunova-voice',new Highlight(...ranges));
 }
 
 function App(){const [token,setToken]=useState(localStorage.getItem('edu_token')||'');const[user,setUser]=useState(JSON.parse(localStorage.getItem('edu_user')||'null'));const[tab,setTab]=useState('Dashboard');const[dark,setDark]=useState(localStorage.getItem('edu_dark')==='1');const[accent,setAccent]=useState(localStorage.getItem('edu_accent')||colors[0]);const[error,setError]=useState('');const[busy,setBusy]=useState(false);const[records,setRecords]=useState([]);const[chats,setChats]=useState([]);const[pages,setPages]=useState({count:0,pdf:false});const[chapters,setChapters]=useState([]);const[question,setQuestion]=useState('');const[mode,setMode]=useState('simple');const[provider,setProvider]=useState('auto');const[search,setSearch]=useState('');const[results,setResults]=useState([]);const[page,setPage]=useState(1);const[selection,setSelection]=useState('');const[revisionChapter,setRevisionChapter]=useState('1');const[revisionNotes,setRevisionNotes]=useState('');const[revisionBusy,setRevisionBusy]=useState(false);const[quiz,setQuiz]=useState([]);const[quizChapter,setQuizChapter]=useState("1");const[quizBusy,setQuizBusy]=useState(false);const[quizSubmitted,setQuizSubmitted]=useState(false);const[quizSaved,setQuizSaved]=useState(false);const[answers,setAnswers]=useState({});const [showPassword,setShowPassword]=useState(false);const messagesEndRef=useRef(null);const [loginMode,setLoginMode]=useState('login');const [form,setForm]=useState({name:'',email:'',password:''});
@@ -36,11 +64,14 @@ useEffect(()=>{if(tab==='AI Chatbot')messagesEndRef.current?.scrollTo({top:messa
 
 
 const [speakingId,setSpeakingId]=useState(null);
+const [modelNames,setModelNames]=useState({gemini:'Gemini',ollama:'Ollama'});
+useEffect(()=>{if(token)api('/models').then(setModelNames).catch(()=>{})},[token]);
 const [spokenOffset,setSpokenOffset]=useState(-1);
 const speechRef=useRef(null);
+useEffect(()=>{if(speakingId!==null)paintVoiceHighlight(speakingId,spokenOffset);else clearVoiceHighlight();return clearVoiceHighlight},[speakingId,spokenOffset,tab,chats,revisionNotes,quiz]);
 const stopSpeaking=()=>{
   if('speechSynthesis' in window)window.speechSynthesis.cancel();
-  speechRef.current=null;setSpeakingId(null);setSpokenOffset(-1);
+  speechRef.current=null;setSpeakingId(null);setSpokenOffset(-1);clearVoiceHighlight();
 };
 const speakAnswer=(content,id)=>{
   if(!('speechSynthesis' in window)){alert('Speech is not supported in this browser.');return;}
@@ -62,7 +93,7 @@ const speakAnswer=(content,id)=>{
 useEffect(()=>{stopSpeaking()},[tab]);
 useEffect(()=>()=>{if('speechSynthesis' in window)window.speechSynthesis.cancel()},[]);
 const speechButton=(content,id,label='Speak')=><button type="button" className="speak-btn" onClick={()=>speakAnswer(content,id)} aria-label={speakingId===id?'Stop reading':'Read aloud'}>{speakingId===id?<><Square size={15}/> Stop</>:<><Volume2 size={17}/> {label}</>}</button>;
-const highlighted=(content,id)=>speakingId===id?<SpeechHighlight text={plainSpeech(content)} offset={spokenOffset}/>:null;
+
 const clearQuizHistory=async()=>{
   const saved=records.filter(r=>r.kind==='score');
   if(!window.confirm(`Delete ${saved.length} saved practice quiz result(s)? This cannot be undone.`))return;
@@ -122,7 +153,7 @@ return <div className="shell"><aside><div className="logo"><GraduationCap/> EduN
 
 
 
-{tab==='AI Chatbot'&&<div className="panel"><div className="toolbar"><select aria-label="AI provider" value={provider} onChange={e=>setProvider(e.target.value)}><option value="auto">Auto · Gemini / Ollama fallback</option><option value="gemini">Gemini model</option><option value="ollama">Ollama model</option></select><select value={mode} onChange={e=>setMode(e.target.value)}>{[['simple','Simple Explanation'],['detailed','Detailed Explanation'],['textbook','Textbook Answer'],['2marks','2 Marks'],['3marks','3 Marks'],['5marks','5 Marks']].map(([v,n])=><option value={v}>{n}</option>)}</select><button type="button" className="clear-chat" onClick={clearChats} disabled={!chats.length||busy}><Trash2 size={16}/> Clear chat</button></div><div className="messages" ref={messagesEndRef}>{!chats.length&&<p className="muted">Ask a question about Class 12 Computer Science. Upload your textbook to enable grounded references.</p>}{chats.map((m,i)=><div className={'bubble '+m.role} key={i}><small>{m.role==='user'?'You':(m.model||'EduNova AI · model unavailable for older messages')}</small><div className="chat-markdown">{speakingId==='chat-'+i?<SpeechHighlight text={plainSpeech(m.content)} offset={spokenOffset}/>:<ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>}</div>{m.role!=='user'&&speechButton(m.content,'chat-'+i)}</div>)}</div><form className="ask" onSubmit={e=>{e.preventDefault();ask()}}><input value={question} onChange={e=>setQuestion(e.target.value)} placeholder="Ask anything about your textbook..."/><button disabled={busy}><Send size={18}/>{busy?'Thinking...':'Send'}</button></form></div>}
+{tab==='AI Chatbot'&&<div className="panel"><div className="toolbar"><select aria-label="AI provider" value={provider} onChange={e=>setProvider(e.target.value)}><option value="auto">Auto · {modelNames.gemini} → {modelNames.ollama}</option><option value="gemini">{modelNames.gemini}</option><option value="ollama">{modelNames.ollama}</option></select><select value={mode} onChange={e=>setMode(e.target.value)}>{[['simple','Simple Explanation'],['detailed','Detailed Explanation'],['textbook','Textbook Answer'],['2marks','2 Marks'],['3marks','3 Marks'],['5marks','5 Marks']].map(([v,n])=><option value={v}>{n}</option>)}</select><button type="button" className="clear-chat" onClick={clearChats} disabled={!chats.length||busy}><Trash2 size={16}/> Clear chat</button></div><div className="messages" ref={messagesEndRef}>{!chats.length&&<p className="muted">Ask a question about Class 12 Computer Science. Upload your textbook to enable grounded references.</p>}{chats.map((m,i)=><div className={'bubble '+m.role} key={i}><small>{m.role==='user'?'You':(m.model||'EduNova AI · model unavailable for older messages')}</small><div className="chat-markdown" data-voice-id={'chat-'+i} data-voice-source={'chat-'+i} data-voice-text={plainSpeech(m.content)}><ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown></div>{m.role!=='user'&&speechButton(m.content,'chat-'+i)}</div>)}</div><form className="ask" onSubmit={e=>{e.preventDefault();ask()}}><input value={question} onChange={e=>setQuestion(e.target.value)} placeholder="Ask anything about your textbook..."/><button disabled={busy}><Send size={18}/>{busy?'Thinking...':'Send'}</button></form></div>}
 
 
 
@@ -170,7 +201,7 @@ return <div className="shell"><aside><div className="logo"><GraduationCap/> EduN
       <article className="result" style={{marginTop:24}}>
         <h3>Chapter {revisionChapter} — Revision Notes</h3>
 
-        <div className="markdown-content">{speakingId==='revision'?<SpeechHighlight text={plainSpeech(revisionNotes)} offset={spokenOffset}/>:<ReactMarkdown remarkPlugins={[remarkGfm]}>{revisionNotes}</ReactMarkdown>}</div>
+        <div className="markdown-content" data-voice-id="revision" data-voice-source="revision" data-voice-text={plainSpeech(revisionNotes)}><ReactMarkdown remarkPlugins={[remarkGfm]}>{revisionNotes}</ReactMarkdown></div>
         {speechButton(revisionNotes,'revision','Read notes')}
       </article>
     }
@@ -178,7 +209,7 @@ return <div className="shell"><aside><div className="logo"><GraduationCap/> EduN
 }
 
 
- {tab==='Practice Questions'&&<div className="panel"><h2>Practice Questions</h2><p>Select a chapter and take a multiple-choice quiz from its textbook content. Your questions and results stay on this page.</p><p className="muted">Saved quiz attempts: {records.filter(r=>r.kind==='score').length}</p><div className="actions"><select aria-label="Practice chapter" value={quizChapter} onChange={e=>{setQuizChapter(e.target.value);setQuiz([]);setAnswers({});setQuizSubmitted(false);setQuizSaved(false)}}>{Array.from({length:16},(_,i)=><option key={i+1} value={String(i+1)}>Chapter {i+1}</option>)}</select><button disabled={quizBusy} onClick={async()=>{setQuizBusy(true);setQuiz([]);setAnswers({});setQuizSubmitted(false);setQuizSaved(false);setError('');try{const data=await api('/practice?chapter='+encodeURIComponent(quizChapter)+'&provider='+encodeURIComponent(provider));setQuiz(data.questions||[]);if(!(data.questions||[]).length)setError(data.message||'No quiz questions available for this chapter.')}catch(e){setError(e.message)}finally{setQuizBusy(false)}}}>{quizBusy?'Generating quiz...':'Generate Practice Quiz'}</button><button type="button" className="clear-chat" onClick={clearQuizHistory} disabled={!records.some(r=>r.kind==='score')&&!quiz.length}><Trash2 size={16}/> Clear history</button></div>{quizBusy&&<p className="muted" role="status">Preparing questions from Chapter {quizChapter}...</p>}{quiz.map((q,i)=><article className="result" key={i} style={{marginTop:18}}><b>{i+1}. {speakingId==='quiz-'+i?<SpeechHighlight text={q.question} offset={spokenOffset}/>:q.question}</b>{speechButton(q.question+' '+q.options.map((o,j)=>String.fromCharCode(65+j)+'. '+o).join(' '),'quiz-'+i,'Read question')}{q.options.map((o,j)=><label className="option" key={j} style={{display:'flex',alignItems:'center',gap:10,marginTop:12,cursor:quizSubmitted?'default':'pointer'}}><input type="radio" name={'practice-q'+i} checked={answers[i]===j} disabled={quizSubmitted} onChange={()=>setAnswers(v=>({...v,[i]:j}))}/><span>{speakingId==='quiz-'+i?<SpeechHighlight text={o} offset={spokenOffset} base={q.question.length+1+q.options.slice(0,j).reduce((sum,prev,k)=>sum+String.fromCharCode(65+k).length+2+prev.length+1,0)+3}/>:o}</span></label>)}{quizSubmitted&&<div style={{marginTop:12}}><strong style={{color:answers[i]===q.correct?'#16a34a':'#dc2626'}}>{answers[i]===q.correct?'Correct':'Incorrect'} — Answer: {q.options[q.correct]}</strong>{q.explanation&&<><p>{speakingId==='explanation-'+i?<SpeechHighlight text={plainSpeech(q.explanation)} offset={spokenOffset}/>:q.explanation}</p>{speechButton(q.explanation,'explanation-'+i,'Read explanation')}</>}</div>}</article>)}{!!quiz.length&&<div className="actions" style={{marginTop:24}}>{!quizSubmitted?<button disabled={Object.keys(answers).length!==quiz.length} onClick={async()=>{setQuizSubmitted(true);if(!quizSaved){setQuizSaved(true);await save('score',{chapter:Number(quizChapter),score:quiz.filter((q,i)=>answers[i]===q.correct).length,total:quiz.length,date:new Date().toISOString()})}}}>Submit Answers ({Object.keys(answers).length}/{quiz.length})</button>:<><h3>Score: {quiz.filter((q,i)=>answers[i]===q.correct).length} / {quiz.length}</h3><button onClick={()=>{setAnswers({});setQuizSubmitted(false);setQuizSaved(false)}}>Try Again</button><button onClick={()=>{setQuiz([]);setAnswers({});setQuizSubmitted(false);setQuizSaved(false)}}>New Quiz</button></>}</div>}</div>}
+ {tab==='Practice Questions'&&<div className="panel"><h2>Practice Questions</h2><p>Select a chapter and take a multiple-choice quiz from its textbook content. Your questions and results stay on this page.</p><p className="muted">Saved quiz attempts: {records.filter(r=>r.kind==='score').length}</p><div className="actions"><select aria-label="Practice chapter" value={quizChapter} onChange={e=>{setQuizChapter(e.target.value);setQuiz([]);setAnswers({});setQuizSubmitted(false);setQuizSaved(false)}}>{Array.from({length:16},(_,i)=><option key={i+1} value={String(i+1)}>Chapter {i+1}</option>)}</select><button disabled={quizBusy} onClick={async()=>{setQuizBusy(true);setQuiz([]);setAnswers({});setQuizSubmitted(false);setQuizSaved(false);setError('');try{const data=await api('/practice?chapter='+encodeURIComponent(quizChapter)+'&provider='+encodeURIComponent(provider));setQuiz(data.questions||[]);if(!(data.questions||[]).length)setError(data.message||'No quiz questions available for this chapter.')}catch(e){setError(e.message)}finally{setQuizBusy(false)}}}>{quizBusy?'Generating quiz...':'Generate Practice Quiz'}</button><button type="button" className="clear-chat" onClick={clearQuizHistory} disabled={!records.some(r=>r.kind==='score')&&!quiz.length}><Trash2 size={16}/> Clear history</button></div>{quizBusy&&<p className="muted" role="status">Preparing questions from Chapter {quizChapter}...</p>}{quiz.map((q,i)=><article className="result" key={i} style={{marginTop:18}}><b>{i+1}. <span data-voice-id={'quiz-'+i} data-voice-source={'quiz-'+i} data-voice-text={q.question+' '+q.options.map((o,j)=>String.fromCharCode(65+j)+'. '+o).join(' ')}>{q.question}</span></b>{speechButton(q.question+' '+q.options.map((o,j)=>String.fromCharCode(65+j)+'. '+o).join(' '),'quiz-'+i,'Read question')}{q.options.map((o,j)=><label className="option" key={j} style={{display:'flex',alignItems:'center',gap:10,marginTop:12,cursor:quizSubmitted?'default':'pointer'}}><input type="radio" name={'practice-q'+i} checked={answers[i]===j} disabled={quizSubmitted} onChange={()=>setAnswers(v=>({...v,[i]:j}))}/><span data-voice-id={'quiz-'+i}>{String.fromCharCode(65+j)}. {o}</span></label>)}{quizSubmitted&&<div style={{marginTop:12}}><strong style={{color:answers[i]===q.correct?'#16a34a':'#dc2626'}}>{answers[i]===q.correct?'Correct':'Incorrect'} — Answer: {q.options[q.correct]}</strong>{q.explanation&&<><p data-voice-id={'explanation-'+i} data-voice-source={'explanation-'+i} data-voice-text={plainSpeech(q.explanation)}>{q.explanation}</p>{speechButton(q.explanation,'explanation-'+i,'Read explanation')}</>}</div>}</article>)}{!!quiz.length&&<div className="actions" style={{marginTop:24}}>{!quizSubmitted?<button disabled={Object.keys(answers).length!==quiz.length} onClick={async()=>{setQuizSubmitted(true);if(!quizSaved){setQuizSaved(true);await save('score',{chapter:Number(quizChapter),score:quiz.filter((q,i)=>answers[i]===q.correct).length,total:quiz.length,date:new Date().toISOString()})}}}>Submit Answers ({Object.keys(answers).length}/{quiz.length})</button>:<><h3>Score: {quiz.filter((q,i)=>answers[i]===q.correct).length} / {quiz.length}</h3><button onClick={()=>{setAnswers({});setQuizSubmitted(false);setQuizSaved(false)}}>Try Again</button><button onClick={()=>{setQuiz([]);setAnswers({});setQuizSubmitted(false);setQuizSaved(false)}}>New Quiz</button></>}</div>}</div>}
 
 {tab==='Bookmarks'&&<div className="panel"><h2>Saved bookmarks & highlights</h2>{records.filter(x=>['bookmark','highlight','note'].includes(x.kind)).map(r=><article className="result"><b>{r.kind} · PDF page {r.payload.page||'—'}</b><p>{r.payload.text||''}</p><button onClick={()=>{setPage(r.payload.page||1);setTab('Textbook Reader')}}>Open</button><button onClick={async()=>{await api('/records/'+r.id,{method:'DELETE'});refresh()}}>Delete</button></article>)}</div>}
 

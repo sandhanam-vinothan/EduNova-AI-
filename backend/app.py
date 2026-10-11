@@ -291,6 +291,11 @@ def clear_chat_history(u:User=Depends(current),s:Session=Depends(db)):
 
 
 
+@app.get('/api/models')
+def configured_models(u:User=Depends(current)):
+ return {'gemini':os.getenv('GEMINI_MODEL','gemini-2.5-flash').strip(),
+         'ollama':os.getenv('OLLAMA_MODEL','gemma4:31b').strip()}
+
 @app.get('/api/chat/history')
 
 def history(u:User=Depends(current),s:Session=Depends(db)):

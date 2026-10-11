@@ -313,3 +313,7 @@ input[type="radio"]:focus-visible {
 .spoken-word{background:rgba(110,92,255,.28);color:var(--text);border-radius:4px;padding:1px 0;box-decoration-break:clone;-webkit-box-decoration-break:clone}
 .dark .spoken-word{background:rgba(170,150,255,.36)}
 .chat-markdown p{margin:0 0 12px}.chat-markdown p:last-child{margin-bottom:0}
+
+/* Highlight words in place without replacing Markdown or adding a reading paragraph. */
+::highlight(edunova-voice){background-color:#b9a7ff;color:#21105d;text-decoration:underline;text-decoration-color:#6b46eb;}
+.dark ::highlight(edunova-voice){background-color:#aa91fa;color:#17102d;}
