@@ -174,3 +174,48 @@ input[type="radio"]:focus-visible {
 .speak-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;margin-top:12px;padding:9px 15px;border:1px solid rgba(110,120,160,.2);border-radius:12px;background:var(--bg);color:var(--accent,#4f46e5);font-weight:700;cursor:pointer;box-shadow:var(--neu-small)}
 .speak-btn:hover{filter:brightness(1.08)}
 .speak-btn:focus-visible{outline:3px solid var(--accent,#4f46e5);outline-offset:3px}
+
+/* AI Chatbot Markdown Formatting */
+.chat-markdown {
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+
+.chat-markdown p {
+  margin: 0 0 14px;
+}
+
+.chat-markdown p:last-child {
+  margin-bottom: 0;
+}
+
+.chat-markdown strong {
+  font-weight: 750;
+  color: inherit;
+}
+
+.chat-markdown ul,
+.chat-markdown ol {
+  padding-left: 25px;
+  margin: 12px 0;
+}
+
+.chat-markdown li {
+  margin-bottom: 8px;
+}
+
+.chat-markdown h1,
+.chat-markdown h2,
+.chat-markdown h3 {
+  margin: 20px 0 12px;
+  line-height: 1.4;
+}
+
+.chat-markdown code {
+  overflow-wrap: anywhere;
+}
+
+.chat-markdown pre {
+  overflow-x: auto;
+  max-width: 100%;
+}
