@@ -150,3 +150,22 @@ input[type="radio"]:focus-visible {
   .markdown-content h2 { font-size: 19px; }
   .markdown-content h3 { font-size: 17px; }
 }
+/* Fix invisible Dashboard welcome button */
+
+.hero button,
+.hero .btn,
+.hero a,
+.welcome-banner button,
+.welcome-banner a {
+  color: #ffffff !important;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.hero button:hover,
+.hero a:hover,
+.welcome-banner button:hover,
+.welcome-banner a:hover {
+  color: #ffffff !important;
+  filter: brightness(1.12);
+}
