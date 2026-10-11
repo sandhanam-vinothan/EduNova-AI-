@@ -225,3 +225,43 @@ input[type="radio"]:focus-visible {
 .speech-reading .spoken-word{background:#c5b7ff;color:#21105d;border-radius:5px;padding:2px 3px;box-decoration-break:clone;-webkit-box-decoration-break:clone;transition:background .1s ease}
 .dark .speech-reading .spoken-word{background:#a78bfa;color:#160b33}
 .speak-btn{margin-right:8px;margin-bottom:6px}
+
+
+/* EduNova layout update: flowing sidebar and wider reading workspace */
+@media (min-width: 701px) {
+  .shell { align-items: stretch; }
+  .shell > aside {
+    position: relative !important;
+    top: auto !important;
+    height: auto !important;
+    min-height: 100vh;
+    align-self: stretch;
+    overflow: visible;
+    flex: 0 0 226px;
+    width: 226px;
+  }
+  .shell > aside nav,
+  .shell > aside > nav {
+    flex: 0 0 auto;
+    overflow: visible;
+    max-height: none;
+  }
+  .shell > .main { flex: 1 1 0; min-width: 0; width: auto; }
+  .main .content {
+    max-width: none !important;
+    width: 100%;
+    margin: 0;
+    padding: 26px 30px 44px;
+  }
+  .main .panel { width: 100%; min-height: 500px; }
+  .main .messages { height: min(66vh, 720px); }
+  .main .pdfscroll { max-height: 78vh; }
+  .main .markdown-content { max-width: none; }
+}
+@media (min-width: 701px) and (max-width: 1000px) {
+  .shell > aside { flex-basis: 195px; width: 195px; }
+  .main .content { padding: 20px 20px 36px; }
+}
+@media (max-width: 700px) {
+  .main .content { width: 100%; max-width: none; }
+}
