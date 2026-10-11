@@ -68,9 +68,11 @@ const [modelNames,setModelNames]=useState({gemini:'Gemini',ollama:'Ollama'});
 useEffect(()=>{if(token)api('/models').then(setModelNames).catch(()=>{})},[token]);
 const [spokenOffset,setSpokenOffset]=useState(-1);
 const speechRef=useRef(null);
+const speechTimerRef=useRef(null);
 useEffect(()=>{if(speakingId!==null)paintVoiceHighlight(speakingId,spokenOffset);else clearVoiceHighlight();return clearVoiceHighlight},[speakingId,spokenOffset,tab,chats,revisionNotes,quiz]);
 const stopSpeaking=()=>{
   if('speechSynthesis' in window)window.speechSynthesis.cancel();
+  if(speechTimerRef.current){clearInterval(speechTimerRef.current);speechTimerRef.current=null;}
   speechRef.current=null;setSpeakingId(null);setSpokenOffset(-1);clearVoiceHighlight();
 };
 const speakAnswer=(content,id)=>{
@@ -82,16 +84,44 @@ const speakAnswer=(content,id)=>{
   const utterance=new SpeechSynthesisUtterance(plain);
   utterance.lang='en-IN';utterance.rate=0.95;utterance.pitch=1;
   speechRef.current=utterance;
+  // Native boundary events are most accurate. Some Windows voices never emit them,
+  // so a timed fallback keeps the ORIGINAL text highlighted rather than duplicating it.
+  const words=[...plain.matchAll(/\S+/g)];
+  let fallbackIndex=0;
+  let lastBoundary=0;
+  const mark=index=>{if(index>=0&&index<words.length)setSpokenOffset(words[index].index)};
   utterance.onboundary=e=>{
-    if(speechRef.current===utterance && e.name==='word')setSpokenOffset(e.charIndex);
+    if(speechRef.current!==utterance)return;
+    if(e.charIndex>=0){
+      const index=words.findIndex((w,i)=>e.charIndex>=w.index&&e.charIndex<(words[i+1]?.index??plain.length));
+      if(index>=0){fallbackIndex=index;lastBoundary=Date.now();mark(index)}
+    }
   };
-  utterance.onend=()=>{if(speechRef.current===utterance){speechRef.current=null;setSpeakingId(null);setSpokenOffset(-1)}};
-  utterance.onerror=utterance.onend;
-  setSpeakingId(id);setSpokenOffset(-1);
+  const finish=()=>{
+    if(speechRef.current===utterance){
+      if(speechTimerRef.current)clearInterval(speechTimerRef.current);
+      speechTimerRef.current=null;speechRef.current=null;
+      setSpeakingId(null);setSpokenOffset(-1);clearVoiceHighlight();
+    }
+  };
+  utterance.onend=finish;
+  utterance.onerror=finish;
+  setSpeakingId(id);mark(0);
+  utterance.onstart=()=>{
+    lastBoundary=Date.now();
+    const approximateMs=350/utterance.rate;
+    speechTimerRef.current=setInterval(()=>{
+      if(speechRef.current!==utterance)return;
+      // Use native events whenever they are being received.
+      if(Date.now()-lastBoundary<650)return;
+      fallbackIndex=Math.min(fallbackIndex+1,words.length-1);
+      mark(fallbackIndex);
+    },approximateMs);
+  };
   window.speechSynthesis.speak(utterance);
 };
 useEffect(()=>{stopSpeaking()},[tab]);
-useEffect(()=>()=>{if('speechSynthesis' in window)window.speechSynthesis.cancel()},[]);
+useEffect(()=>()=>{if(speechTimerRef.current)clearInterval(speechTimerRef.current);if('speechSynthesis' in window)window.speechSynthesis.cancel()},[]);
 const speechButton=(content,id,label='Speak')=><button type="button" className="speak-btn" onClick={()=>speakAnswer(content,id)} aria-label={speakingId===id?'Stop reading':'Read aloud'}>{speakingId===id?<><Square size={15}/> Stop</>:<><Volume2 size={17}/> {label}</>}</button>;
 
 const clearQuizHistory=async()=>{
@@ -209,7 +239,7 @@ return <div className="shell"><aside><div className="logo"><GraduationCap/> EduN
 }
 
 
- {tab==='Practice Questions'&&<div className="panel"><h2>Practice Questions</h2><p>Select a chapter and take a multiple-choice quiz from its textbook content. Your questions and results stay on this page.</p><p className="muted">Saved quiz attempts: {records.filter(r=>r.kind==='score').length}</p><div className="actions"><select aria-label="Practice chapter" value={quizChapter} onChange={e=>{setQuizChapter(e.target.value);setQuiz([]);setAnswers({});setQuizSubmitted(false);setQuizSaved(false)}}>{Array.from({length:16},(_,i)=><option key={i+1} value={String(i+1)}>Chapter {i+1}</option>)}</select><button disabled={quizBusy} onClick={async()=>{setQuizBusy(true);setQuiz([]);setAnswers({});setQuizSubmitted(false);setQuizSaved(false);setError('');try{const data=await api('/practice?chapter='+encodeURIComponent(quizChapter)+'&provider='+encodeURIComponent(provider));setQuiz(data.questions||[]);if(!(data.questions||[]).length)setError(data.message||'No quiz questions available for this chapter.')}catch(e){setError(e.message)}finally{setQuizBusy(false)}}}>{quizBusy?'Generating quiz...':'Generate Practice Quiz'}</button><button type="button" className="clear-chat" onClick={clearQuizHistory} disabled={!records.some(r=>r.kind==='score')&&!quiz.length}><Trash2 size={16}/> Clear history</button></div>{quizBusy&&<p className="muted" role="status">Preparing questions from Chapter {quizChapter}...</p>}{quiz.map((q,i)=><article className="result" key={i} style={{marginTop:18}}><b>{i+1}. <span data-voice-id={'quiz-'+i} data-voice-source={'quiz-'+i} data-voice-text={q.question+' '+q.options.map((o,j)=>String.fromCharCode(65+j)+'. '+o).join(' ')}>{q.question}</span></b>{speechButton(q.question+' '+q.options.map((o,j)=>String.fromCharCode(65+j)+'. '+o).join(' '),'quiz-'+i,'Read question')}{q.options.map((o,j)=><label className="option" key={j} style={{display:'flex',alignItems:'center',gap:10,marginTop:12,cursor:quizSubmitted?'default':'pointer'}}><input type="radio" name={'practice-q'+i} checked={answers[i]===j} disabled={quizSubmitted} onChange={()=>setAnswers(v=>({...v,[i]:j}))}/><span data-voice-id={'quiz-'+i}>{String.fromCharCode(65+j)}. {o}</span></label>)}{quizSubmitted&&<div style={{marginTop:12}}><strong style={{color:answers[i]===q.correct?'#16a34a':'#dc2626'}}>{answers[i]===q.correct?'Correct':'Incorrect'} — Answer: {q.options[q.correct]}</strong>{q.explanation&&<><p data-voice-id={'explanation-'+i} data-voice-source={'explanation-'+i} data-voice-text={plainSpeech(q.explanation)}>{q.explanation}</p>{speechButton(q.explanation,'explanation-'+i,'Read explanation')}</>}</div>}</article>)}{!!quiz.length&&<div className="actions" style={{marginTop:24}}>{!quizSubmitted?<button disabled={Object.keys(answers).length!==quiz.length} onClick={async()=>{setQuizSubmitted(true);if(!quizSaved){setQuizSaved(true);await save('score',{chapter:Number(quizChapter),score:quiz.filter((q,i)=>answers[i]===q.correct).length,total:quiz.length,date:new Date().toISOString()})}}}>Submit Answers ({Object.keys(answers).length}/{quiz.length})</button>:<><h3>Score: {quiz.filter((q,i)=>answers[i]===q.correct).length} / {quiz.length}</h3><button onClick={()=>{setAnswers({});setQuizSubmitted(false);setQuizSaved(false)}}>Try Again</button><button onClick={()=>{setQuiz([]);setAnswers({});setQuizSubmitted(false);setQuizSaved(false)}}>New Quiz</button></>}</div>}</div>}
+ {tab==='Practice Questions'&&<div className="panel"><h2>Practice Questions</h2><p>Select a chapter and take a multiple-choice quiz from its textbook content. Your questions and results stay on this page.</p><p className="muted">Saved quiz attempts: {records.filter(r=>r.kind==='score').length}</p><div className="actions"><select aria-label="Practice chapter" value={quizChapter} onChange={e=>{setQuizChapter(e.target.value);setQuiz([]);setAnswers({});setQuizSubmitted(false);setQuizSaved(false)}}>{Array.from({length:16},(_,i)=><option key={i+1} value={String(i+1)}>CHAPTER {i+1}</option>)}</select><button disabled={quizBusy} onClick={async()=>{setQuizBusy(true);setQuiz([]);setAnswers({});setQuizSubmitted(false);setQuizSaved(false);setError('');try{const data=await api('/practice?chapter='+encodeURIComponent(quizChapter)+'&provider='+encodeURIComponent(provider));setQuiz(data.questions||[]);if(!(data.questions||[]).length)setError(data.message||'No quiz questions available for this chapter.')}catch(e){setError(e.message)}finally{setQuizBusy(false)}}}>{quizBusy?'Generating quiz...':'Generate Practice Quiz'}</button><button type="button" className="clear-chat" onClick={clearQuizHistory} disabled={!records.some(r=>r.kind==='score')&&!quiz.length}><Trash2 size={16}/> Clear history</button></div>{quizBusy&&<p className="muted" role="status">Preparing questions from Chapter {quizChapter}...</p>}{quiz.map((q,i)=><article className="result" key={i} style={{marginTop:18}}><b>{i+1}. <span data-voice-id={'quiz-'+i} data-voice-source={'quiz-'+i} data-voice-text={q.question+' '+q.options.map((o,j)=>String.fromCharCode(65+j)+'. '+o).join(' ')}>{q.question}</span></b>{speechButton(q.question+' '+q.options.map((o,j)=>String.fromCharCode(65+j)+'. '+o).join(' '),'quiz-'+i,'Read question')}{q.options.map((o,j)=><label className="option" key={j} style={{display:'flex',alignItems:'center',gap:10,marginTop:12,cursor:quizSubmitted?'default':'pointer'}}><input type="radio" name={'practice-q'+i} checked={answers[i]===j} disabled={quizSubmitted} onChange={()=>setAnswers(v=>({...v,[i]:j}))}/><span data-voice-id={'quiz-'+i}>{String.fromCharCode(65+j)}. {o}</span></label>)}{quizSubmitted&&<div style={{marginTop:12}}><strong style={{color:answers[i]===q.correct?'#16a34a':'#dc2626'}}>{answers[i]===q.correct?'Correct':'Incorrect'} — Answer: {q.options[q.correct]}</strong>{q.explanation&&<><p data-voice-id={'explanation-'+i} data-voice-source={'explanation-'+i} data-voice-text={plainSpeech(q.explanation)}>{q.explanation}</p>{speechButton(q.explanation,'explanation-'+i,'Read explanation')}</>}</div>}</article>)}{!!quiz.length&&<div className="actions" style={{marginTop:24}}>{!quizSubmitted?<button disabled={Object.keys(answers).length!==quiz.length} onClick={async()=>{setQuizSubmitted(true);if(!quizSaved){setQuizSaved(true);await save('score',{chapter:Number(quizChapter),score:quiz.filter((q,i)=>answers[i]===q.correct).length,total:quiz.length,date:new Date().toISOString()})}}}>Submit Answers ({Object.keys(answers).length}/{quiz.length})</button>:<><h3>Score: {quiz.filter((q,i)=>answers[i]===q.correct).length} / {quiz.length}</h3><button onClick={()=>{setAnswers({});setQuizSubmitted(false);setQuizSaved(false)}}>Try Again</button><button onClick={()=>{setQuiz([]);setAnswers({});setQuizSubmitted(false);setQuizSaved(false)}}>New Quiz</button></>}</div>}</div>}
 
 {tab==='Bookmarks'&&<div className="panel"><h2>Saved bookmarks & highlights</h2>{records.filter(x=>['bookmark','highlight','note'].includes(x.kind)).map(r=><article className="result"><b>{r.kind} · PDF page {r.payload.page||'—'}</b><p>{r.payload.text||''}</p><button onClick={()=>{setPage(r.payload.page||1);setTab('Textbook Reader')}}>Open</button><button onClick={async()=>{await api('/records/'+r.id,{method:'DELETE'});refresh()}}>Delete</button></article>)}</div>}
 
