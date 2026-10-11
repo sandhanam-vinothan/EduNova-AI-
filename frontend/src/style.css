@@ -219,3 +219,9 @@ input[type="radio"]:focus-visible {
   overflow-x: auto;
   max-width: 100%;
 }
+
+/* Shared speech reader: highlights current word when browser supplies speech boundaries */
+.speech-reading{margin:12px 0;padding:12px 16px;border-radius:12px;background:var(--bg);color:var(--text);line-height:1.9;overflow-wrap:anywhere;white-space:normal}
+.speech-reading .spoken-word{background:#c5b7ff;color:#21105d;border-radius:5px;padding:2px 3px;box-decoration-break:clone;-webkit-box-decoration-break:clone;transition:background .1s ease}
+.dark .speech-reading .spoken-word{background:#a78bfa;color:#160b33}
+.speak-btn{margin-right:8px;margin-bottom:6px}

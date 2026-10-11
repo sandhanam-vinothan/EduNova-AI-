@@ -7,6 +7,14 @@ const names=['Dashboard','AI Chatbot','Textbook Reader','Find Book Line','Quick 
 
 
 
+function plainSpeech(value){return String(value||'').replace(/\[([^\]]+)\]\([^)]+\)/g,'$1').replace(/[`*_#~]/g,'').replace(/<[^>]+>/g,'').replace(/\s+/g,' ').trim()}
+function SpeechHighlight({text,offset}){
+  if(offset<0)return <div className="speech-reading" aria-live="off">{text}</div>;
+  const matches=[...text.matchAll(/\S+/g)];
+  const current=matches.findIndex((m,i)=>offset>=m.index && (i===matches.length-1||offset<matches[i+1].index));
+  return <div className="speech-reading" aria-live="off">{matches.map((m,i)=><React.Fragment key={i}>{i>0?' ':''}<span className={i===current?'spoken-word':''}>{m[0]}</span></React.Fragment>)}</div>;
+}
+
 function App(){const [token,setToken]=useState(localStorage.getItem('edu_token')||'');const[user,setUser]=useState(JSON.parse(localStorage.getItem('edu_user')||'null'));const[tab,setTab]=useState('Dashboard');const[dark,setDark]=useState(localStorage.getItem('edu_dark')==='1');const[accent,setAccent]=useState(localStorage.getItem('edu_accent')||colors[0]);const[error,setError]=useState('');const[busy,setBusy]=useState(false);const[records,setRecords]=useState([]);const[chats,setChats]=useState([]);const[pages,setPages]=useState({count:0,pdf:false});const[chapters,setChapters]=useState([]);const[question,setQuestion]=useState('');const[mode,setMode]=useState('simple');const[provider,setProvider]=useState('auto');const[search,setSearch]=useState('');const[results,setResults]=useState([]);const[page,setPage]=useState(1);const[selection,setSelection]=useState('');const[revisionChapter,setRevisionChapter]=useState('1');const[revisionNotes,setRevisionNotes]=useState('');const[revisionBusy,setRevisionBusy]=useState(false);const[quiz,setQuiz]=useState([]);const[quizChapter,setQuizChapter]=useState("1");const[quizBusy,setQuizBusy]=useState(false);const[quizSubmitted,setQuizSubmitted]=useState(false);const[quizSaved,setQuizSaved]=useState(false);const[answers,setAnswers]=useState({});const [showPassword,setShowPassword]=useState(false);const messagesEndRef=useRef(null);const [loginMode,setLoginMode]=useState('login');const [form,setForm]=useState({name:'',email:'',password:''});
 
 
@@ -24,39 +32,43 @@ useEffect(()=>{if(tab==='AI Chatbot')messagesEndRef.current?.scrollTo({top:messa
 
 
 const [speakingId,setSpeakingId]=useState(null);
+const [spokenOffset,setSpokenOffset]=useState(-1);
 const speechRef=useRef(null);
 const stopSpeaking=()=>{
   if('speechSynthesis' in window)window.speechSynthesis.cancel();
-  speechRef.current=null;
-  setSpeakingId(null);
+  speechRef.current=null;setSpeakingId(null);setSpokenOffset(-1);
 };
 const speakAnswer=(content,id)=>{
-  if(!('speechSynthesis' in window)){
-    alert('Read aloud is not supported in this browser.');
-    return;
-  }
+  if(!('speechSynthesis' in window)){alert('Speech is not supported in this browser.');return;}
   if(speakingId===id){stopSpeaking();return;}
   stopSpeaking();
-  const plain=String(content||'')
-    .replace(/\[([^\]]+)\]\([^)]+\)/g,'$1')
-    .replace(/[`*_#~]/g,'')
-    .replace(/<[^>]+>/g,'')
-    .trim();
+  const plain=plainSpeech(content);
   if(!plain)return;
   const utterance=new SpeechSynthesisUtterance(plain);
-  utterance.lang='en-IN';
-  utterance.rate=0.95;
-  utterance.pitch=1;
+  utterance.lang='en-IN';utterance.rate=0.95;utterance.pitch=1;
   speechRef.current=utterance;
-  utterance.onend=()=>{
-    if(speechRef.current===utterance){speechRef.current=null;setSpeakingId(null);}
+  utterance.onboundary=e=>{
+    if(speechRef.current===utterance && e.name==='word')setSpokenOffset(e.charIndex);
   };
+  utterance.onend=()=>{if(speechRef.current===utterance){speechRef.current=null;setSpeakingId(null);setSpokenOffset(-1)}};
   utterance.onerror=utterance.onend;
-  setSpeakingId(id);
+  setSpeakingId(id);setSpokenOffset(-1);
   window.speechSynthesis.speak(utterance);
 };
-useEffect(()=>{if(tab!=='AI Chatbot')stopSpeaking();},[tab]);
-useEffect(()=>()=>{if('speechSynthesis' in window)window.speechSynthesis.cancel();},[]);
+useEffect(()=>{stopSpeaking()},[tab]);
+useEffect(()=>()=>{if('speechSynthesis' in window)window.speechSynthesis.cancel()},[]);
+const speechButton=(content,id,label='Speak')=><button type="button" className="speak-btn" onClick={()=>speakAnswer(content,id)} aria-label={speakingId===id?'Stop reading':'Read aloud'}>{speakingId===id?<><Square size={15}/> Stop</>:<><Volume2 size={17}/> {label}</>}</button>;
+const speechView=(content,id)=>speakingId===id?<SpeechHighlight text={plainSpeech(content)} offset={spokenOffset}/>:null;
+const clearQuizHistory=async()=>{
+  const saved=records.filter(r=>r.kind==='score');
+  if(!window.confirm(`Delete ${saved.length} saved practice quiz result(s)? This cannot be undone.`))return;
+  setError('');
+  try{
+    for(const item of saved)await api('/records/'+item.id,{method:'DELETE'});
+    setRecords(v=>v.filter(r=>r.kind!=='score'));
+    setQuiz([]);setAnswers({});setQuizSubmitted(false);setQuizSaved(false);
+  }catch(e){setError(e.message);refresh()}
+};
 
 const clearChats=async()=>{if(!window.confirm('Clear all your saved chat history? This cannot be undone.'))return;try{await api('/chat/history',{method:'DELETE'});setChats([]);setError('')}catch(e){setError(e.message)}};
 
@@ -110,7 +122,7 @@ return <div className="shell"><aside><div className="logo"><GraduationCap/> EduN
   <ReactMarkdown remarkPlugins={[remarkGfm]}>
     {m.content}
   </ReactMarkdown>
-</div>{m.role!=='user'&&<button type="button" className="speak-btn" onClick={()=>speakAnswer(m.content,i)} aria-label={speakingId===i?'Stop reading answer':'Read answer aloud'}>{speakingId===i?<><Square size={15}/> Stop</>:<><Volume2 size={17}/> Speak</>}</button>}</div>)}</div><form className="ask" onSubmit={e=>{e.preventDefault();ask()}}><input value={question} onChange={e=>setQuestion(e.target.value)} placeholder="Ask anything about your textbook..."/><button disabled={busy}><Send size={18}/>{busy?'Thinking...':'Send'}</button></form></div>}
+</div>{m.role!=='user'&&<>{speechView(m.content,'chat-'+i)}{speechButton(m.content,'chat-'+i)}</>}</div>)}</div><form className="ask" onSubmit={e=>{e.preventDefault();ask()}}><input value={question} onChange={e=>setQuestion(e.target.value)} placeholder="Ask anything about your textbook..."/><button disabled={busy}><Send size={18}/>{busy?'Thinking...':'Send'}</button></form></div>}
 
 
 
@@ -163,13 +175,15 @@ return <div className="shell"><aside><div className="logo"><GraduationCap/> EduN
             {revisionNotes}
           </ReactMarkdown>
         </div>
+        {speechView(revisionNotes,'revision')}
+        {speechButton(revisionNotes,'revision','Read notes')}
       </article>
     }
   </div>
 }
 
 
- {tab==='Practice Questions'&&<div className="panel"><h2>Practice Questions</h2><p>Select a chapter and take a multiple-choice quiz from its textbook content. Your questions and results stay on this page.</p><div className="actions"><select aria-label="Practice chapter" value={quizChapter} onChange={e=>{setQuizChapter(e.target.value);setQuiz([]);setAnswers({});setQuizSubmitted(false);setQuizSaved(false)}}>{Array.from({length:16},(_,i)=><option key={i+1} value={String(i+1)}>Chapter {i+1}</option>)}</select><button disabled={quizBusy} onClick={async()=>{setQuizBusy(true);setQuiz([]);setAnswers({});setQuizSubmitted(false);setQuizSaved(false);setError('');try{const data=await api('/practice?chapter='+encodeURIComponent(quizChapter)+'&provider='+encodeURIComponent(provider));setQuiz(data.questions||[]);if(!(data.questions||[]).length)setError(data.message||'No quiz questions available for this chapter.')}catch(e){setError(e.message)}finally{setQuizBusy(false)}}}>{quizBusy?'Generating quiz...':'Generate Practice Quiz'}</button></div>{quizBusy&&<p className="muted" role="status">Preparing questions from Chapter {quizChapter}...</p>}{quiz.map((q,i)=><article className="result" key={i} style={{marginTop:18}}><b>{i+1}. {q.question}</b>{q.options.map((o,j)=><label className="option" key={j} style={{display:'flex',alignItems:'center',gap:10,marginTop:12,cursor:quizSubmitted?'default':'pointer'}}><input type="radio" name={'practice-q'+i} checked={answers[i]===j} disabled={quizSubmitted} onChange={()=>setAnswers(v=>({...v,[i]:j}))}/><span>{o}</span></label>)}{quizSubmitted&&<div style={{marginTop:12}}><strong style={{color:answers[i]===q.correct?'#16a34a':'#dc2626'}}>{answers[i]===q.correct?'Correct':'Incorrect'} — Answer: {q.options[q.correct]}</strong>{q.explanation&&<p>{q.explanation}</p>}</div>}</article>)}{!!quiz.length&&<div className="actions" style={{marginTop:24}}>{!quizSubmitted?<button disabled={Object.keys(answers).length!==quiz.length} onClick={async()=>{setQuizSubmitted(true);if(!quizSaved){setQuizSaved(true);await save('score',{chapter:Number(quizChapter),score:quiz.filter((q,i)=>answers[i]===q.correct).length,total:quiz.length,date:new Date().toISOString()})}}}>Submit Answers ({Object.keys(answers).length}/{quiz.length})</button>:<><h3>Score: {quiz.filter((q,i)=>answers[i]===q.correct).length} / {quiz.length}</h3><button onClick={()=>{setAnswers({});setQuizSubmitted(false);setQuizSaved(false)}}>Try Again</button><button onClick={()=>{setQuiz([]);setAnswers({});setQuizSubmitted(false);setQuizSaved(false)}}>New Quiz</button></>}</div>}</div>}
+ {tab==='Practice Questions'&&<div className="panel"><h2>Practice Questions</h2><p>Select a chapter and take a multiple-choice quiz from its textbook content. Your questions and results stay on this page.</p><p className="muted">Saved quiz attempts: {records.filter(r=>r.kind==='score').length}</p><div className="actions"><select aria-label="Practice chapter" value={quizChapter} onChange={e=>{setQuizChapter(e.target.value);setQuiz([]);setAnswers({});setQuizSubmitted(false);setQuizSaved(false)}}>{Array.from({length:16},(_,i)=><option key={i+1} value={String(i+1)}>Chapter {i+1}</option>)}</select><button disabled={quizBusy} onClick={async()=>{setQuizBusy(true);setQuiz([]);setAnswers({});setQuizSubmitted(false);setQuizSaved(false);setError('');try{const data=await api('/practice?chapter='+encodeURIComponent(quizChapter)+'&provider='+encodeURIComponent(provider));setQuiz(data.questions||[]);if(!(data.questions||[]).length)setError(data.message||'No quiz questions available for this chapter.')}catch(e){setError(e.message)}finally{setQuizBusy(false)}}}>{quizBusy?'Generating quiz...':'Generate Practice Quiz'}</button><button type="button" className="clear-chat" onClick={clearQuizHistory} disabled={!records.some(r=>r.kind==='score')&&!quiz.length}><Trash2 size={16}/> Clear history</button></div>{quizBusy&&<p className="muted" role="status">Preparing questions from Chapter {quizChapter}...</p>}{quiz.map((q,i)=><article className="result" key={i} style={{marginTop:18}}><b>{i+1}. {q.question}</b>{speechView(q.question+' '+q.options.map((o,j)=>String.fromCharCode(65+j)+'. '+o).join(' '),'quiz-'+i)}{speechButton(q.question+' '+q.options.map((o,j)=>String.fromCharCode(65+j)+'. '+o).join(' '),'quiz-'+i,'Read question')}{q.options.map((o,j)=><label className="option" key={j} style={{display:'flex',alignItems:'center',gap:10,marginTop:12,cursor:quizSubmitted?'default':'pointer'}}><input type="radio" name={'practice-q'+i} checked={answers[i]===j} disabled={quizSubmitted} onChange={()=>setAnswers(v=>({...v,[i]:j}))}/><span>{o}</span></label>)}{quizSubmitted&&<div style={{marginTop:12}}><strong style={{color:answers[i]===q.correct?'#16a34a':'#dc2626'}}>{answers[i]===q.correct?'Correct':'Incorrect'} — Answer: {q.options[q.correct]}</strong>{q.explanation&&<><p>{q.explanation}</p>{speechView(q.explanation,'explanation-'+i)}{speechButton(q.explanation,'explanation-'+i,'Read explanation')}</>}</div>}</article>)}{!!quiz.length&&<div className="actions" style={{marginTop:24}}>{!quizSubmitted?<button disabled={Object.keys(answers).length!==quiz.length} onClick={async()=>{setQuizSubmitted(true);if(!quizSaved){setQuizSaved(true);await save('score',{chapter:Number(quizChapter),score:quiz.filter((q,i)=>answers[i]===q.correct).length,total:quiz.length,date:new Date().toISOString()})}}}>Submit Answers ({Object.keys(answers).length}/{quiz.length})</button>:<><h3>Score: {quiz.filter((q,i)=>answers[i]===q.correct).length} / {quiz.length}</h3><button onClick={()=>{setAnswers({});setQuizSubmitted(false);setQuizSaved(false)}}>Try Again</button><button onClick={()=>{setQuiz([]);setAnswers({});setQuizSubmitted(false);setQuizSaved(false)}}>New Quiz</button></>}</div>}</div>}
 
 {tab==='Bookmarks'&&<div className="panel"><h2>Saved bookmarks & highlights</h2>{records.filter(x=>['bookmark','highlight','note'].includes(x.kind)).map(r=><article className="result"><b>{r.kind} · PDF page {r.payload.page||'—'}</b><p>{r.payload.text||''}</p><button onClick={()=>{setPage(r.payload.page||1);setTab('Textbook Reader')}}>Open</button><button onClick={async()=>{await api('/records/'+r.id,{method:'DELETE'});refresh()}}>Delete</button></article>)}</div>}
 
