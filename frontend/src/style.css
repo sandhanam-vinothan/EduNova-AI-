@@ -307,3 +307,9 @@ input[type="radio"]:focus-visible {
   .main .content > .panel:has(.messages) .messages {height:48vh;min-height:260px;}
   .messages .bubble {max-width:96%;white-space:normal;}
 }
+
+/* Speech highlights the original content in place, never duplicates a paragraph. */
+.speech-inline{white-space:pre-wrap;line-height:inherit}
+.spoken-word{background:rgba(110,92,255,.28);color:var(--text);border-radius:4px;padding:1px 0;box-decoration-break:clone;-webkit-box-decoration-break:clone}
+.dark .spoken-word{background:rgba(170,150,255,.36)}
+.chat-markdown p{margin:0 0 12px}.chat-markdown p:last-child{margin-bottom:0}

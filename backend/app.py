@@ -20,7 +20,7 @@ from fastapi.security import HTTPBearer,HTTPAuthorizationCredentials
 
 from pydantic import BaseModel
 
-from sqlalchemy import create_engine,Column,Integer,String,Text,ForeignKey,DateTime,UniqueConstraint,select
+from sqlalchemy import create_engine,Column,Integer,String,Text,ForeignKey,DateTime,UniqueConstraint,select,inspect,text
 
 from sqlalchemy.orm import declarative_base,sessionmaker,Session
 
@@ -54,9 +54,12 @@ class Page(BaseModelDB):
 
 class Chat(BaseModelDB):
 
- __tablename__='chats';id=Column(Integer,primary_key=True);user_id=Column(Integer,ForeignKey('users.id'),index=True);role=Column(String(20));content=Column(Text);created=Column(DateTime,default=datetime.datetime.utcnow)
+ __tablename__='chats';id=Column(Integer,primary_key=True);user_id=Column(Integer,ForeignKey('users.id'),index=True);role=Column(String(20));content=Column(Text);model=Column(String(160),nullable=True);created=Column(DateTime,default=datetime.datetime.utcnow)
 
 BaseModelDB.metadata.create_all(engine)
+# Existing databases need the nullable column; old history remains valid.
+if 'model' not in {c['name'] for c in inspect(engine).get_columns('chats')}:
+ with engine.begin() as conn:conn.execute(text('ALTER TABLE chats ADD COLUMN model VARCHAR(160)'))
 
 app=FastAPI(title='EduNova AI API')
 
@@ -292,7 +295,7 @@ def clear_chat_history(u:User=Depends(current),s:Session=Depends(db)):
 
 def history(u:User=Depends(current),s:Session=Depends(db)):
 
- return [{'id':x.id,'role':x.role,'content':x.content,'created':x.created.isoformat()} for x in s.scalars(select(Chat).where(Chat.user_id==u.id).order_by(Chat.id.desc()).limit(100))][::-1]
+ return [{'id':x.id,'role':x.role,'content':x.content,'model':x.model,'created':x.created.isoformat()} for x in s.scalars(select(Chat).where(Chat.user_id==u.id).order_by(Chat.id.desc()).limit(100))][::-1]
 
 async def generate(provider, messages):
 
@@ -436,11 +439,11 @@ async def chat(v:Question,u:User=Depends(current),s:Session=Depends(db)):
 
             for role,content in [('user',v.message),('assistant',answer)]:
 
-                s.add(Chat(user_id=u.id,role=role,content=content))
+                s.add(Chat(user_id=u.id,role=role,content=content,model=(os.getenv('GEMINI_MODEL','gemini-2.5-flash').strip() if provider=='gemini' else os.getenv('OLLAMA_MODEL','gemma4:31b').strip()) if role=='assistant' else None))
 
             s.commit()
 
-            return {'answer':answer,'provider':provider,'references':[{'pdf_page':p.number,'printed_page':p.printed} for p in ranked[:3]] if pages else []}
+            return {'answer':answer,'provider':provider,'model':os.getenv('GEMINI_MODEL','gemini-2.5-flash').strip() if provider=='gemini' else os.getenv('OLLAMA_MODEL','gemma4:31b').strip(),'references':[{'pdf_page':p.number,'printed_page':p.printed} for p in ranked[:3]] if pages else []}
 
         except (httpx.HTTPError, RuntimeError, KeyError, ValueError, IndexError) as e:
 
