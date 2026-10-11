@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 
-const names=['Dashboard','AI Chatbot','Textbook Reader','Find Book Line','Quick Revision','Practice Questions','Bookmarks','Chat History','Profile','Settings'];const icons=[LayoutDashboard,MessageCircle,BookOpen,Search,Layers,GraduationCap,Bookmark,History,BarChart3,User,Settings];const colors=['#4f46e5','#0284c7','#0d9488','#16a34a','#d97706','#db2777','#7c3aed'];
+const names=['Dashboard','AI Chatbot','Textbook Reader','Find Book Line','Quick Revision','Practice Questions','Bookmarks','Chat History','Profile','Settings'];const icons=[LayoutDashboard,MessageCircle,BookOpen,Search,Layers,GraduationCap,Bookmark,History,User,Settings];const colors=['#4f46e5','#0284c7','#0d9488','#16a34a','#d97706','#db2777','#7c3aed'];
 
 
 
