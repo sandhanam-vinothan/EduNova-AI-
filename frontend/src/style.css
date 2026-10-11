@@ -65,3 +65,88 @@ input[type="radio"]:focus-visible {
   outline: 3px solid #958eff;
   outline-offset: 3px;
 }
+
+/* EduNova AI — Clean Quick Revision Notes */
+
+.markdown-content {
+  max-width: 960px;
+  margin: 24px auto 0;
+  padding: 30px 36px;
+  line-height: 1.85;
+  font-size: 16px;
+  letter-spacing: 0.1px;
+  overflow-wrap: anywhere;
+}
+
+/* Paragraph spacing */
+.markdown-content p {
+  margin: 0 0 18px;
+  line-height: 1.85;
+}
+
+/* Main headings */
+.markdown-content h1 {
+  font-size: 25px;
+  font-weight: 800;
+  margin: 28px 0 18px;
+  line-height: 1.35;
+}
+
+/* Section headings */
+.markdown-content h2 {
+  font-size: 21px;
+  font-weight: 750;
+  margin: 32px 0 16px;
+  line-height: 1.4;
+}
+
+/* Subheadings */
+.markdown-content h3,
+.markdown-content h4 {
+  font-size: 18px;
+  font-weight: 700;
+  margin: 26px 0 12px;
+  line-height: 1.5;
+}
+
+/* Bold text */
+.markdown-content strong {
+  font-weight: 750;
+  color: inherit;
+}
+
+/* Lists */
+.markdown-content ul,
+.markdown-content ol {
+  padding-left: 30px;
+  margin: 14px 0 24px;
+}
+
+.markdown-content li {
+  margin-bottom: 12px;
+  line-height: 1.8;
+}
+
+.markdown-content li p {
+  margin-bottom: 8px;
+}
+
+/* Section separators */
+.markdown-content hr {
+  border: none;
+  border-top: 1px solid #aab8d0;
+  margin: 30px 0;
+}
+
+/* Mobile-friendly spacing */
+@media (max-width: 768px) {
+  .markdown-content {
+    padding: 18px 12px;
+    font-size: 15px;
+    line-height: 1.75;
+  }
+
+  .markdown-content h1 { font-size: 22px; }
+  .markdown-content h2 { font-size: 19px; }
+  .markdown-content h3 { font-size: 17px; }
+}
