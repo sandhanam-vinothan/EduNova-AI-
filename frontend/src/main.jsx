@@ -1,5 +1,6 @@
 import React,{useState,useEffect,useRef} from 'react';import{createRoot}from'react-dom/client';import{motion}from'framer-motion';import{BookOpen,LayoutDashboard,MessageCircle,Search,Bookmark,History,BarChart3,Settings,User,Layers,GraduationCap,LogOut,Send,Upload,ChevronLeft,ChevronRight,ZoomIn,ZoomOut,Moon,Sun,Copy,Highlighter,Eye,EyeOff,Trash2}from'lucide-react';import * as pdfjs from 'pdfjs-dist';import worker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';import './style.css';pdfjs.GlobalWorkerOptions.workerSrc=worker;
-
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 
 const names=['Dashboard','AI Chatbot','Textbook Reader','Find Book Line','Quick Revision','Practice Questions','Bookmarks','Chat History','Learning Progress','Profile','Settings'];const icons=[LayoutDashboard,MessageCircle,BookOpen,Search,Layers,GraduationCap,Bookmark,History,BarChart3,User,Settings];const colors=['#4f46e5','#0284c7','#0d9488','#16a34a','#d97706','#db2777','#7c3aed'];
@@ -82,8 +83,51 @@ return <div className="shell"><aside><div className="logo"><GraduationCap/> EduN
 
 
 
-{tab==='Quick Revision'&&<div className="panel"><h2>Quick Revision</h2><p>Select a chapter to generate revision notes on this page.</p><div className="actions"><select aria-label="Choose chapter" value={revisionChapter} onChange={e=>{setRevisionChapter(e.target.value);setRevisionNotes('')}}>{revisionChapterInfo.map(c=><option key={c.number} value={String(c.number)}>{c.title}</option>)}</select><button onClick={generateRevision} disabled={revisionBusy}>{revisionBusy?'Generating notes...':'Generate Notes'}</button></div>{revisionBusy&&<p className="muted" role="status">Preparing chapter revision notes...</p>}{revisionNotes&&<article className="result" style={{marginTop:24}}><h3>Chapter {revisionChapter} — Revision Notes</h3><div style={{whiteSpace:'pre-wrap',lineHeight:1.8}}>{revisionNotes}</div></article>}</div>}
+{tab==='Quick Revision'&&
+  <div className="panel">
+    <h2>Quick Revision</h2>
+    <p>Select a chapter to generate revision notes on this page.</p>
 
+    <div className="actions">
+      <select
+        aria-label="Choose chapter"
+        value={revisionChapter}
+        onChange={e=>{
+          setRevisionChapter(e.target.value);
+          setRevisionNotes('');
+        }}
+      >
+        {revisionChapterInfo.map(c=>
+          <option key={c.number} value={String(c.number)}>
+            {c.title}
+          </option>
+        )}
+      </select>
+
+      <button onClick={generateRevision} disabled={revisionBusy}>
+        {revisionBusy?'Generating notes...':'Generate Notes'}
+      </button>
+    </div>
+
+    {revisionBusy&&
+      <p className="muted" role="status">
+        Preparing chapter revision notes...
+      </p>
+    }
+
+    {revisionNotes&&
+      <article className="result" style={{marginTop:24}}>
+        <h3>Chapter {revisionChapter} — Revision Notes</h3>
+
+        <div className="markdown-content">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+            {revisionNotes}
+          </ReactMarkdown>
+        </div>
+      </article>
+    }
+  </div>
+}
 
 
  {tab==='Practice Questions'&&<div className="panel"><h2>Practice Questions</h2><p>Select a chapter and take a multiple-choice quiz from its textbook content. Your questions and results stay on this page.</p><div className="actions"><select aria-label="Practice chapter" value={quizChapter} onChange={e=>{setQuizChapter(e.target.value);setQuiz([]);setAnswers({});setQuizSubmitted(false);setQuizSaved(false)}}>{Array.from({length:16},(_,i)=><option key={i+1} value={String(i+1)}>Chapter {i+1}</option>)}</select><button disabled={quizBusy} onClick={async()=>{setQuizBusy(true);setQuiz([]);setAnswers({});setQuizSubmitted(false);setQuizSaved(false);setError('');try{const data=await api('/practice?chapter='+encodeURIComponent(quizChapter)+'&provider='+encodeURIComponent(provider));setQuiz(data.questions||[]);if(!(data.questions||[]).length)setError(data.message||'No quiz questions available for this chapter.')}catch(e){setError(e.message)}finally{setQuizBusy(false)}}}>{quizBusy?'Generating quiz...':'Generate Practice Quiz'}</button></div>{quizBusy&&<p className="muted" role="status">Preparing questions from Chapter {quizChapter}...</p>}{quiz.map((q,i)=><article className="result" key={i} style={{marginTop:18}}><b>{i+1}. {q.question}</b>{q.options.map((o,j)=><label className="option" key={j} style={{display:'flex',alignItems:'center',gap:10,marginTop:12,cursor:quizSubmitted?'default':'pointer'}}><input type="radio" name={'practice-q'+i} checked={answers[i]===j} disabled={quizSubmitted} onChange={()=>setAnswers(v=>({...v,[i]:j}))}/><span>{o}</span></label>)}{quizSubmitted&&<div style={{marginTop:12}}><strong style={{color:answers[i]===q.correct?'#16a34a':'#dc2626'}}>{answers[i]===q.correct?'Correct':'Incorrect'} — Answer: {q.options[q.correct]}</strong>{q.explanation&&<p>{q.explanation}</p>}</div>}</article>)}{!!quiz.length&&<div className="actions" style={{marginTop:24}}>{!quizSubmitted?<button disabled={Object.keys(answers).length!==quiz.length} onClick={async()=>{setQuizSubmitted(true);if(!quizSaved){setQuizSaved(true);await save('score',{chapter:Number(quizChapter),score:quiz.filter((q,i)=>answers[i]===q.correct).length,total:quiz.length,date:new Date().toISOString()})}}}>Submit Answers ({Object.keys(answers).length}/{quiz.length})</button>:<><h3>Score: {quiz.filter((q,i)=>answers[i]===q.correct).length} / {quiz.length}</h3><button onClick={()=>{setAnswers({});setQuizSubmitted(false);setQuizSaved(false)}}>Try Again</button><button onClick={()=>{setQuiz([]);setAnswers({});setQuizSubmitted(false);setQuizSaved(false)}}>New Quiz</button></>}</div>}</div>}
