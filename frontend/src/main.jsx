@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 
-const names=['Dashboard','AI Chatbot','Textbook Reader','Find Book Line','Quick Revision','Practice Questions','Bookmarks','Chat History','Learning Progress','Profile','Settings'];const icons=[LayoutDashboard,MessageCircle,BookOpen,Search,Layers,GraduationCap,Bookmark,History,BarChart3,User,Settings];const colors=['#4f46e5','#0284c7','#0d9488','#16a34a','#d97706','#db2777','#7c3aed'];
+const names=['Dashboard','AI Chatbot','Textbook Reader','Find Book Line','Quick Revision','Practice Questions','Bookmarks','Chat History','Profile','Settings'];const icons=[LayoutDashboard,MessageCircle,BookOpen,Search,Layers,GraduationCap,Bookmark,History,BarChart3,User,Settings];const colors=['#4f46e5','#0284c7','#0d9488','#16a34a','#d97706','#db2777','#7c3aed'];
 
 
 
@@ -137,10 +137,6 @@ return <div className="shell"><aside><div className="logo"><GraduationCap/> EduN
 
 
 {tab==='Chat History'&&<div className="panel"><div className="history-heading"><h2>Conversation history</h2><button type="button" className="clear-chat" onClick={clearChats} disabled={!chats.length||busy}><Trash2 size={16}/> Clear history</button></div>{chats.map((m,i)=><article className="result"><b>{m.role==='user'?'You':'AI'}</b><p>{m.content}</p></article>)}</div>}
-
-
-
-{tab==='Learning Progress'&&<div className="panel"><h2>Learning progress</h2><p>Saved reading positions and quiz results.</p>{records.filter(x=>['progress','score'].includes(x.kind)).map(r=><article className="result"><b>{r.kind==='score'?'Practice score':'Reading progress'}</b><p>{JSON.stringify(r.payload)}</p></article>)}</div>}
 
 
 
