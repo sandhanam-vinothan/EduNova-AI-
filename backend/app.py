@@ -476,42 +476,6 @@ def chapter_pages(s:Session, chapter:int):
         return [], f'No indexed content found for Chapter {chapter}.'
     return chosen, title
 
-def chapter_pages(s:Session, chapter:int):
-    """Find the actual chapter heading and bound the content by the next heading."""
-    all_pages=list(s.scalars(select(Page).order_by(Page.number)))
-    if not all_pages:
-        return [], 'The textbook has not been indexed yet.'
-    # Require a heading near the beginning of a page, not a TOC listing or review question.
-    headings=[]
-    heading_pattern=re.compile(r'(?im)^\s*(?:chapter|unit)\s*[-:.]?\s*0?([1-9]|1[0-6])\b[^\n]{0,90}$')
-    for p in all_pages:
-        lines=p.content.splitlines()
-        for i,line in enumerate(lines[:28]):
-            match=heading_pattern.match(line)
-            if match:
-                headings.append((p.number,int(match.group(1)),line.strip()))
-                break
-    # TOC chapter listings typically cluster together; prefer the last occurrence
-    # before the next chapter's heading, and avoid treating the TOC as chapter content.
-    candidates=[(page,title) for page,num,title in headings if num==chapter]
-    if not candidates:
-        return [], f'Chapter {chapter} heading was not found in the indexed textbook. Reindex a searchable PDF.'
-    selected=None
-    for page,title in candidates:
-        next_head=next(((p,n) for p,n,_ in headings if p>page and n==chapter+1),None)
-        if next_head and next_head[0]-page>=2:
-            selected=(page,next_head[0],title)
-    if selected is None:
-        page,title=candidates[-1]
-        following=[p for p,n,_ in headings if p>page and n!=chapter]
-        stop=min(following) if following else all_pages[-1].number+1
-        selected=(page,stop,title)
-    first,last,title=selected
-    chosen=[p for p in all_pages if first<=p.number<last]
-    if not chosen:
-        return [], f'No indexed content found for Chapter {chapter}.'
-    return chosen, title
-
 @app.get('/api/practice')
 async def practice(chapter:int=1,provider:str='auto',u:User=Depends(current),s:Session=Depends(db)):
     if not 1<=chapter<=16:
