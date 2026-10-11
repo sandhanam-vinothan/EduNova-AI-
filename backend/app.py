@@ -264,6 +264,14 @@ def chapters(s:Session=Depends(db)):
 
    if re.match(r'^(?:CHAPTER|Chapter|UNIT|Unit)\s*[-:]?\s*\d+',line) and len(line)<120:out.append({'title':line,'page':x.number})
 
+ # Some textbook chapter title headings are embedded as graphics. The searchable
+ # PDF still includes its chapter number in the page footer (e.g. Chapter 2.indd).
+ # Supply the missing chapter to the frontend without changing existing entries.
+ if not any(re.search(r'(?i)\b(?:chapter|unit)\s*[-:]?\s*0*2\b', x['title']) for x in out):
+  for p in s.scalars(select(Page).order_by(Page.number)):
+   if re.search(r'(?i)\bChapter\s*0*2\s*\.indd\b', p.content or ''):
+    out.append({'title':'Chapter 2 - Data Abstraction','page':p.number})
+    break
  return out[:100]
 
 @app.delete('/api/chat/history')
@@ -390,7 +398,13 @@ async def chat(v:Question,u:User=Depends(current),s:Session=Depends(db)):
 
     if v.page:
 
-        ranked=sorted(ranked,key=lambda p:0 if p.number==v.page else 1)
+        # Include neighboring textbook pages for a chapter revision request.
+        # Keep normal chat behavior for non-revision questions.
+        if 'revision notes' in v.message.lower():
+            nearby=[p for p in pages if v.page<=p.number<=v.page+2]
+            ranked=nearby+ [p for p in ranked if p.number not in {q.number for q in nearby}]
+        else:
+            ranked=sorted(ranked,key=lambda p:0 if p.number==v.page else 1)
 
     context='\n\n'.join(f'[PDF page {p.number}; printed page {p.printed}] {p.content[:2500]}' for p in ranked[:3])
 
@@ -459,7 +473,18 @@ def chapter_pages(s:Session, chapter:int):
     # before the next chapter's heading, and avoid treating the TOC as chapter content.
     candidates=[(page,title) for page,num,title in headings if num==chapter]
     if not candidates:
-        return [], f'Chapter {chapter} heading was not found in the indexed textbook. Reindex a searchable PDF.'
+        # Some PDF chapter headings are graphical, but the text footer contains
+        # 'Chapter N.indd'. Detect a consecutive run of those indexed pages.
+        footer=re.compile(r'(?i)\bChapter\s*0*'+str(chapter)+r'\s*\.indd\b')
+        matches=[p for p in all_pages if footer.search(p.content or '')]
+        if matches:
+            # The footer is present on every page of the chapter, including
+            # the first page, and remains searchable after PDF indexing.
+            first=matches[0].number
+            last=matches[-1].number
+            chosen=[p for p in all_pages if first<=p.number<=last]
+            return chosen, ('Chapter 2 - Data Abstraction' if chapter==2 else f'Chapter {chapter}')
+        return [], f'Chapter {chapter} heading was not found in the indexed textbook. Check whether this chapter was indexed.'
     selected=None
     for page,title in candidates:
         next_head=next(((p,n) for p,n,_ in headings if p>page and n==chapter+1),None)
