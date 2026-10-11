@@ -181,7 +181,7 @@ return <div className="shell"><aside><div className="logo"><GraduationCap/> EduN
       >
         {revisionChapterInfo.map(c=>
           <option key={c.number} value={String(c.number)}>
-            {c.title}
+            {`CHAPTER ${c.number}`}
           </option>
         )}
       </select>
