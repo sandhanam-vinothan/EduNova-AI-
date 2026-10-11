@@ -169,3 +169,8 @@ input[type="radio"]:focus-visible {
   color: #ffffff !important;
   filter: brightness(1.12);
 }
+
+/* EduNova AI chatbot Speak / Stop controls */
+.speak-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;margin-top:12px;padding:9px 15px;border:1px solid rgba(110,120,160,.2);border-radius:12px;background:var(--bg);color:var(--accent,#4f46e5);font-weight:700;cursor:pointer;box-shadow:var(--neu-small)}
+.speak-btn:hover{filter:brightness(1.08)}
+.speak-btn:focus-visible{outline:3px solid var(--accent,#4f46e5);outline-offset:3px}

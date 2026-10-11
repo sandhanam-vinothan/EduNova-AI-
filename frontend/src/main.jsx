@@ -1,4 +1,4 @@
-import React,{useState,useEffect,useRef} from 'react';import{createRoot}from'react-dom/client';import{motion}from'framer-motion';import{BookOpen,LayoutDashboard,MessageCircle,Search,Bookmark,History,BarChart3,Settings,User,Layers,GraduationCap,LogOut,Send,Upload,ChevronLeft,ChevronRight,ZoomIn,ZoomOut,Moon,Sun,Copy,Highlighter,Eye,EyeOff,Trash2}from'lucide-react';import * as pdfjs from 'pdfjs-dist';import worker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';import './style.css';pdfjs.GlobalWorkerOptions.workerSrc=worker;
+import React,{useState,useEffect,useRef} from 'react';import{createRoot}from'react-dom/client';import{motion}from'framer-motion';import{BookOpen,LayoutDashboard,MessageCircle,Search,Bookmark,History,BarChart3,Settings,User,Layers,GraduationCap,LogOut,Send,Upload,ChevronLeft,ChevronRight,ZoomIn,ZoomOut,Moon,Sun,Copy,Highlighter,Eye,EyeOff,Trash2,Volume2,Square}from'lucide-react';import * as pdfjs from 'pdfjs-dist';import worker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';import './style.css';pdfjs.GlobalWorkerOptions.workerSrc=worker;
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -22,6 +22,41 @@ const refresh=()=>{if(!token)return;Promise.all([api('/records'),api('/chat/hist
 useEffect(()=>{if(tab==='AI Chatbot')messagesEndRef.current?.scrollTo({top:messagesEndRef.current.scrollHeight,behavior:'smooth'})},[chats,tab,busy]);
 
 
+
+const [speakingId,setSpeakingId]=useState(null);
+const speechRef=useRef(null);
+const stopSpeaking=()=>{
+  if('speechSynthesis' in window)window.speechSynthesis.cancel();
+  speechRef.current=null;
+  setSpeakingId(null);
+};
+const speakAnswer=(content,id)=>{
+  if(!('speechSynthesis' in window)){
+    alert('Read aloud is not supported in this browser.');
+    return;
+  }
+  if(speakingId===id){stopSpeaking();return;}
+  stopSpeaking();
+  const plain=String(content||'')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g,'$1')
+    .replace(/[`*_#~]/g,'')
+    .replace(/<[^>]+>/g,'')
+    .trim();
+  if(!plain)return;
+  const utterance=new SpeechSynthesisUtterance(plain);
+  utterance.lang='en-IN';
+  utterance.rate=0.95;
+  utterance.pitch=1;
+  speechRef.current=utterance;
+  utterance.onend=()=>{
+    if(speechRef.current===utterance){speechRef.current=null;setSpeakingId(null);}
+  };
+  utterance.onerror=utterance.onend;
+  setSpeakingId(id);
+  window.speechSynthesis.speak(utterance);
+};
+useEffect(()=>{if(tab!=='AI Chatbot')stopSpeaking();},[tab]);
+useEffect(()=>()=>{if('speechSynthesis' in window)window.speechSynthesis.cancel();},[]);
 
 const clearChats=async()=>{if(!window.confirm('Clear all your saved chat history? This cannot be undone.'))return;try{await api('/chat/history',{method:'DELETE'});setChats([]);setError('')}catch(e){setError(e.message)}};
 
@@ -71,7 +106,7 @@ return <div className="shell"><aside><div className="logo"><GraduationCap/> EduN
 
 
 
-{tab==='AI Chatbot'&&<div className="panel"><div className="toolbar"><select aria-label="AI provider" value={provider} onChange={e=>setProvider(e.target.value)}><option value="auto">Auto AI (Gemini → Ollama)</option><option value="gemini">Gemini</option><option value="ollama">Ollama Cloud</option></select><select value={mode} onChange={e=>setMode(e.target.value)}>{[['simple','Simple Explanation'],['detailed','Detailed Explanation'],['textbook','Textbook Answer'],['2marks','2 Marks'],['3marks','3 Marks'],['5marks','5 Marks']].map(([v,n])=><option value={v}>{n}</option>)}</select><button type="button" className="clear-chat" onClick={clearChats} disabled={!chats.length||busy}><Trash2 size={16}/> Clear chat</button></div><div className="messages" ref={messagesEndRef}>{!chats.length&&<p className="muted">Ask a question about Class 12 Computer Science. Upload your textbook to enable grounded references.</p>}{chats.map((m,i)=><div className={'bubble '+m.role} key={i}><small>{m.role==='user'?'You':'EduNova AI'}</small><p>{m.content}</p></div>)}</div><form className="ask" onSubmit={e=>{e.preventDefault();ask()}}><input value={question} onChange={e=>setQuestion(e.target.value)} placeholder="Ask anything about your textbook..."/><button disabled={busy}><Send size={18}/>{busy?'Thinking...':'Send'}</button></form></div>}
+{tab==='AI Chatbot'&&<div className="panel"><div className="toolbar"><select aria-label="AI provider" value={provider} onChange={e=>setProvider(e.target.value)}><option value="auto">Auto AI (Gemini → Ollama)</option><option value="gemini">Gemini</option><option value="ollama">Ollama Cloud</option></select><select value={mode} onChange={e=>setMode(e.target.value)}>{[['simple','Simple Explanation'],['detailed','Detailed Explanation'],['textbook','Textbook Answer'],['2marks','2 Marks'],['3marks','3 Marks'],['5marks','5 Marks']].map(([v,n])=><option value={v}>{n}</option>)}</select><button type="button" className="clear-chat" onClick={clearChats} disabled={!chats.length||busy}><Trash2 size={16}/> Clear chat</button></div><div className="messages" ref={messagesEndRef}>{!chats.length&&<p className="muted">Ask a question about Class 12 Computer Science. Upload your textbook to enable grounded references.</p>}{chats.map((m,i)=><div className={'bubble '+m.role} key={i}><small>{m.role==='user'?'You':'EduNova AI'}</small><p>{m.content}</p>{m.role!=='user'&&<button type="button" className="speak-btn" onClick={()=>speakAnswer(m.content,i)} aria-label={speakingId===i?'Stop reading answer':'Read answer aloud'}>{speakingId===i?<><Square size={15}/> Stop</>:<><Volume2 size={17}/> Speak</>}</button>}</div>)}</div><form className="ask" onSubmit={e=>{e.preventDefault();ask()}}><input value={question} onChange={e=>setQuestion(e.target.value)} placeholder="Ask anything about your textbook..."/><button disabled={busy}><Send size={18}/>{busy?'Thinking...':'Send'}</button></form></div>}
 
 
 
