@@ -22,3 +22,46 @@ select,input{border:0;background:var(--bg);color:var(--text);border-radius:13px;
 
 /* EduNova interaction refinements */
 .password-wrap{position:relative;width:100%}.password-wrap input{width:100%;padding-right:54px!important}.password-wrap .password-eye{position:absolute;right:8px;top:50%;transform:translateY(-50%);width:40px;height:38px;min-height:0;padding:0;display:flex;align-items:center;justify-content:center;background:transparent!important;color:var(--muted)!important;box-shadow:none!important;border:0;border-radius:10px}.password-eye:hover{color:var(--accent)!important}.toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:12px}.clear-chat{display:inline-flex;align-items:center;justify-content:center;gap:7px;white-space:nowrap;margin-left:auto;padding:10px 14px;border-radius:12px;background:var(--bg);color:var(--text);box-shadow:var(--neu-small);font-size:13px;font-weight:650}.clear-chat:hover:not(:disabled){color:#dc4564;box-shadow:var(--neu-inset)}.clear-chat:disabled{opacity:.45;cursor:not-allowed}.history-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}.history-heading h2{margin:0}.messages{overflow-y:auto;overscroll-behavior:contain;scroll-behavior:smooth}aside nav{scrollbar-width:thin;scrollbar-color:transparent transparent}aside nav:hover{scrollbar-color:var(--muted) transparent}aside nav::-webkit-scrollbar{width:5px}aside nav::-webkit-scrollbar-track{background:transparent}aside nav::-webkit-scrollbar-thumb{background:transparent;border-radius:10px}aside nav:hover::-webkit-scrollbar-thumb{background:var(--muted)}@media(max-width:700px){.clear-chat{margin-left:0}.toolbar{gap:9px}.toolbar select{max-width:100%}}
+/* EduNova AI — Visible Practice Quiz Radio Buttons */
+
+input[type="radio"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 21px;
+  height: 21px;
+  min-width: 21px;
+  border: 2.5px solid #697ca3;
+  border-radius: 50%;
+  background: #f7f9ff;
+  cursor: pointer;
+  display: inline-grid;
+  place-content: center;
+  vertical-align: middle;
+  margin-right: 10px;
+  transition: all 0.2s ease;
+}
+
+input[type="radio"]::before {
+  content: "";
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #5046ed;
+  transform: scale(0);
+  transition: transform 0.15s ease;
+}
+
+input[type="radio"]:checked {
+  border-color: #5046ed;
+  background: #eeecff;
+  box-shadow: 0 0 0 4px rgba(80, 70, 237, 0.13);
+}
+
+input[type="radio"]:checked::before {
+  transform: scale(1);
+}
+
+input[type="radio"]:focus-visible {
+  outline: 3px solid #958eff;
+  outline-offset: 3px;
+}
