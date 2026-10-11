@@ -132,6 +132,13 @@ def chapters(s:Session=Depends(db)):
    line=line.strip()
    if re.match(r'^(?:CHAPTER|Chapter|UNIT|Unit)\s*[-:]?\s*\d+',line) and len(line)<120:out.append({'title':line,'page':x.number})
  return out[:100]
+@app.delete('/api/chat/history')
+def clear_chat_history(u:User=Depends(current),s:Session=Depends(db)):
+    from sqlalchemy import delete
+    s.execute(delete(Chat).where(Chat.user_id==u.id))
+    s.commit()
+    return {'ok': True}
+
 @app.get('/api/chat/history')
 def history(u:User=Depends(current),s:Session=Depends(db)):
  return [{'id':x.id,'role':x.role,'content':x.content,'created':x.created.isoformat()} for x in s.scalars(select(Chat).where(Chat.user_id==u.id).order_by(Chat.id.desc()).limit(100))][::-1]
@@ -192,7 +199,7 @@ async def chat(v:Question,u:User=Depends(current),s:Session=Depends(db)):
     modes={'simple':'Explain in simple language','detailed':'Explain step by step','textbook':'Give a textbook-grounded answer','2marks':'Answer concisely for 2 marks','3marks':'Answer for 3 marks','5marks':'Answer for 5 marks'}
     system=('You are EduNova AI, a Tamil Nadu Class 12 Computer Science tutor. '
             +modes.get(v.mode,modes['simple'])+'. Use textbook excerpts when relevant and cite only pages that directly support your statements. '
-            'If the provided excerpts do not answer the question, still explain using general knowledge, clearly label it as a general explanation, and do not invent textbook references. '
+            'STRICT SCOPE: Answer only questions about the Tamil Nadu Class 12 Computer Science syllabus and its related computing concepts. If the user asks about an unrelated topic (e.g. economics, geography, movies), reply with EXACTLY one short sentence: This question is outside the Class 12 Computer Science textbook. Do not give an explanation, greeting, citations, or extra lines for out-of-scope questions. If a question is relevant to computer science but the excerpts are insufficient, explain from general computer science knowledge without inventing textbook references. '
             'For textbook mode, distinguish textbook-supported facts from supplementary knowledge.\nTEXTBOOK CONTEXT:\n'
             +(context or 'No indexed textbook is available.'))
     messages=[{'role':'system','content':system}]+[{'role':m.get('role','user'),'content':str(m.get('content',''))[:4000]} for m in v.history[-8:] if m.get('role') in ('user','assistant')]+[{'role':'user','content':v.message}]
